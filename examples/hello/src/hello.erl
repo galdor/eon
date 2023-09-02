@@ -7,7 +7,7 @@ main(_Args) ->
     ok ->
       ok;
     {error, Reason} ->
-      io:format(standard_error, "cannot start application ~tp: ~tp",
+      io:format(standard_error, "cannot start application ~tp: ~tp~n",
                 [hello, Reason]),
       halt(1)
   end.
