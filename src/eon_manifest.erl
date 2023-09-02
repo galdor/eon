@@ -7,8 +7,7 @@
 
 -type load_error_reason() ::
         empty_manifest_file
-      | {invalid_manifest, Reason :: term()}
-      | {invalid_manifest_entry, term(), Reason :: term()}.
+      | {invalid_manifest, Reason :: term()}.
 
 -type build_error_reason() ::
         {unknown_component, atom()}
