@@ -1,0 +1,8 @@
+{application, eon,
+ [{description, "An Erlang project builder."},
+  {vsn, "0.1.0"},
+  {registered,
+   []},
+  {applications,
+   [kernel,
+    stdlib]}]}.

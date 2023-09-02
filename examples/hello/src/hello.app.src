@@ -1,0 +1,10 @@
+{application, hello,
+ [{description, "A hello world application."},
+  {vsn, "1.0.0"},
+  {registered,
+   [hello_sup,
+    hello_server]},
+  {applications,
+   [kernel,
+    stdlib]},
+  {mod, {hello_app, []}}]}.
