@@ -1,2 +1,3 @@
 *.beam
 /eon
+/examples/hello/hello
