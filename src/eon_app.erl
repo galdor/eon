@@ -7,6 +7,8 @@
       | {empty_resource_file, string()}
       | {invalid_resource_file, string(), Reason :: term()}
       | {invalid_resource_file_path, eon_fs:path()}
+      | {missing_resource_file_property, atom()}
+      | {external_program, [string()], eon_system:exec_error_reason()}
       | term().
 
 %% TODO
@@ -66,8 +68,13 @@ load_specification(App, Manifest) ->
       case file:consult(Path) of
         {ok, []} ->
           {error, {empty_resource_file, Path}};
-        {ok, [Specification | _]} ->
+        {ok, [Specification = {application, App, Properties} | _]} when
+            is_list(Properties) ->
           {ok, Path, Specification};
+        {ok, [{application, _, Properties} | _]} when is_list(Properties) ->
+          {error, {invalid_specification, Path, application_name_mismatch}};
+        {ok, [_Specification | _]} ->
+          {error, {invalid_specification, Path, invalid_format}};
         {error, Reason} ->
           {error, {invalid_specification, Path, Reason}}
       end;
@@ -77,9 +84,57 @@ load_specification(App, Manifest) ->
 
 -spec finalize_specification(specification(), eon_manifest:manifest()) ->
         {ok, specification()} | {error, error_reason()}.
-finalize_specification(Specification, _Manifest) ->
-  %% TODO
-  {ok, Specification}.
+finalize_specification(Specification, Manifest) ->
+  Fun = fun
+          Fun (S, []) ->
+            {ok, S};
+          Fun (S, [FinalizeFun | FinalizeFuns]) ->
+            case FinalizeFun(S, Manifest) of
+              {ok, S2} ->
+                Fun(S2, FinalizeFuns);
+              {error, Reason} ->
+                {error, Reason}
+            end
+        end,
+  Fun(Specification, [fun finalize_specification_modules/2,
+                      fun finalize_specification_version/2]).
+
+-spec finalize_specification_modules(specification(),
+                                     eon_manifest:manifest()) ->
+        {ok, specification()} | {error, error_reason()}.
+finalize_specification_modules({application, App, Properties}, Manifest) ->
+  case eon_app:source_files(App, Manifest) of
+    {ok, Paths} ->
+      Modules = [binary_to_atom(filename:basename(Path, ".erl"))
+                 || Path <- Paths],
+      Properties2 = lists:keystore(mods, 1, Properties, {mods, Modules}),
+      {ok, {application, App, Properties2}};
+    {error, Reason} ->
+      {error, Reason}
+  end.
+
+-spec finalize_specification_version(specification(),
+                                     eon_manifest:manifest()) ->
+        {ok, specification()} | {error, error_reason()}.
+finalize_specification_version(Specification = {application, App, Properties},
+                               _Manifest) ->
+  case lists:keyfind(vsn, 1, Properties) of
+    {vsn, git} ->
+      Program = "git",
+      Args = ["describe", "--tags", "--dirty"],
+      Options = #{first_line => true},
+      case eon_system:exec(Program, Args, Options) of
+        {ok, Version} ->
+          Properties2 = lists:keystore(vsn, 1, Properties, {vsn, Version}),
+          {ok, {application, App, Properties2}};
+        {error, Reason} ->
+          {error, {external_program, [Program | Args], Reason}}
+      end;
+    {vsn, _} ->
+      {ok, Specification};
+    false ->
+      {error, {missing_resource_file_property, vsn}}
+  end.
 
 -spec resource_file_path(atom(), eon_manifest:manifest()) ->
         {ok, eon_fs:path()} | {error, error_reason()}.
