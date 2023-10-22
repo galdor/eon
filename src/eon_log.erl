@@ -98,12 +98,12 @@ do_log({debug, DebugLevel}, Format, Args, Cfg) ->
       ok
   end;
 do_log(info, Format, Args, _Cfg) ->
-  Format2 = unicode:characters_to_binary([Format, "~n"]),
+  Format2 = eon_string:binary([Format, "~n"]),
   io:format(standard_error, Format2, Args);
 do_log(error, Format, Args, _Cfg) ->
-  Format2 = unicode:characters_to_binary(["error: ", Format, "~n"]),
+  Format2 = eon_string:binary(["error: ", Format, "~n"]),
   io:format(standard_error, Format2, Args);
 do_log(fatal, Format, Args, _Cfg) ->
-  Format2 = unicode:characters_to_binary(["fatal error: ", Format, "~n"]),
+  Format2 = eon_string:binary(["fatal error: ", Format, "~n"]),
   io:format(standard_error, Format2, Args),
   halt(1).

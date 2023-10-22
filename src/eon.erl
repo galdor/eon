@@ -84,7 +84,7 @@ build([ComponentName | ComponentNames], Manifest, Options) ->
 -spec parse_command_line([string()]) ->
         {ok, command_line_data()} | {error, command_line_error_reason()}.
 parse_command_line(Args) ->
-  RawArgs = [unicode:characters_to_binary(Arg) || Arg <- Args],
+  RawArgs = [eon_string:binary(Arg) || Arg <- Args],
   Acc = #{arguments => [], options => #{}},
   parse_command_line(RawArgs, options, Acc).
 

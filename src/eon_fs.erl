@@ -105,4 +105,4 @@ path(Filename) when is_binary(Filename) ->
 path_string(Filename) when is_list(Filename) ->
   Filename;
 path_string(Filename) when is_binary(Filename) ->
-  unicode:characters_to_list(Filename).
+  eon_string:string(Filename).
