@@ -3,7 +3,7 @@
 
 main([]) ->
   process_flag(trap_exit, true),
-  eon_log:start(#{}),
+  eon_log:start(#{debug_level => 1}),
   {ok, Manifest} = eon_manifest:load("eon.erl"),
   case eon_manifest:build(eon, Manifest) of
     {ok, ArtifactPath, Warnings} ->
