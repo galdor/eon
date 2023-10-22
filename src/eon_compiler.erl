@@ -29,7 +29,7 @@ compile_file(Filename, _Manifest) ->
       %% compile:file/2 only accepts strings
       FilenameString = eon_fs:path_string(Filename),
       OutputBasename = filename:basename(FilenameString, ".erl") ++ ".beam",
-      OutputPath = filename:join(OutputDirectory, OutputBasename),
+      OutputPath = eon_fs:path(filename:join(OutputDirectory, OutputBasename)),
       Opts = [binary,
               return_errors,
               return_warnings,
@@ -58,9 +58,9 @@ output_directory(Filename) ->
   %% top-level src directory).
   Path = eon_fs:path(Filename),
   case lists:reverse(filename:split(Path)) of
-    [_Basename_, <<"src">>, <<".">>] ->
+    [_Basename, <<"src">>, <<".">>] ->
       {ok, filename:join(lists:reverse([<<"ebin">>]))};
-    [_Basename_, <<"src">>, AppName | _Rest] ->
+    [_Basename, <<"src">>, AppName | _Rest] ->
       {ok, filename:join(lists:reverse([<<"ebin">>, AppName]))};
     _ ->
       {error, {invalid_source_file_path, Filename}}
