@@ -2,8 +2,9 @@
 
 -export([component_names/1, load/1, build/2]).
 
--export_type([manifest/0, project/0, component_type/0, component/0,
-              escript/0, release/0]).
+-export_type([manifest/0, project/0,
+              dependency_type/0, dependency/0, git_dependency/0,
+              component_type/0, component/0, escript/0, release/0]).
 
 -type load_error_reason() ::
         empty_manifest_file
@@ -17,11 +18,24 @@
 
 -type manifest() ::
         #{root := file:filename_all(),
+          dependencies := #{atom() := dependency()},
           components := #{atom() := component()}}.
 
 -type project() ::
         #{name := unicode:chardata(),
           description => unicode:chardata()}.
+
+-type dependency_type() ::
+        git.
+
+-type dependency() ::
+        #{type := dependency_type()}.
+
+-type git_dependency() ::
+        #{type := git,
+          repository := string(),
+          ref => string(),
+          subdirectory => string()}.
 
 -type component_type() ::
         escript
