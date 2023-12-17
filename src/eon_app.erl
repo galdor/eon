@@ -37,6 +37,7 @@ generate_resource_file(App, Manifest) ->
   eon_log:debug(1, "processing ~ts", [Path]),
   Specification2 = finalize_specification(Specification, Manifest),
   OutputPath = resource_file_output_path(Path),
+  eon_fs:ensure_directory(filename:dirname(OutputPath)),
   Data = io_lib:print(Specification2, 1, 80, -1),
   case file:write_file(OutputPath, Data) of
     ok ->
