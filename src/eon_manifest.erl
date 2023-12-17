@@ -4,7 +4,7 @@
 
 -export_type([manifest/0, project/0,
               dependency_type/0, dependency/0, git_dependency/0,
-              component_type/0, component/0, escript/0, release/0]).
+              component_type/0, component/0, library/0, escript/0, release/0]).
 
 -type manifest() ::
         #{root := file:filename_all(),
@@ -28,11 +28,16 @@
           subdirectory => string()}.
 
 -type component_type() ::
-        escript
+        library
+      | escript
       | release.
 
 -type component() ::
         #{type := component_type()}.
+
+-type library() ::
+        #{type := library,
+          applications := [atom()]}.
 
 -type escript() ::
         #{type := escript,
@@ -75,8 +80,8 @@ build(ComponentName, Manifest = #{components := Components}) ->
   case maps:find(ComponentName, Components) of
     {ok, Component = #{type := escript}} ->
       eon_escript:build(Component, Manifest);
-    {ok, #{type := release}} ->
-      throw({error, {unsupported_component_type, release}});
+    {ok, #{type := Type}} when Type =:= library; Type =:= release ->
+      throw({error, {unsupported_component_type, Type}});
     {ok, #{type := Type}} ->
       throw({error, {unknown_component_type, Type}});
     error ->
@@ -88,9 +93,11 @@ build(ComponentName, Manifest = #{components := Components}) ->
 compile(ComponentName, Manifest = #{components := Components}) ->
   case maps:find(ComponentName, Components) of
     {ok, Component = #{type := Type}} when
-        Type =:= escript; Type =:= release ->
+        Type =:= library; Type =:= escript; Type =:= release ->
       Apps = maps:get(applications, Component, []),
       lists:flatten([eon_app:compile(App, Manifest) || App <- Apps]);
+    {ok, #{type := library}} ->
+      throw({error, {unsupported_component_type, library}});
     {ok, #{type := Type}} ->
       throw({error, {unknown_component_type, Type}});
     error ->
