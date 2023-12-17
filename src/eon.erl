@@ -12,7 +12,10 @@
 -type command_line_data() ::
         #{command := atom(),
           arguments := [binary()],
-          options := #{atom() := binary()}}.
+          options := command_line_options()}.
+
+-type command_line_options() ::
+        #{atom() := binary()}.
 
 main(Args) ->
   process_flag(trap_exit, true),
@@ -22,6 +25,8 @@ main(Args) ->
       usage();
     {ok, #{options := #{help := true}}} ->
       usage();
+    {ok, CommandLineData = #{command := compile}} ->
+      cmd_compile(CommandLineData);
     {ok, CommandLineData = #{command := build}} ->
       cmd_build(CommandLineData);
     {error, Reason} ->
@@ -35,49 +40,79 @@ usage() ->
               "~n"
               "OPTIONS~n"
               "~n"
-              "-C <path>             set the root directory of the project"
+              "-C <path>               set the root directory of the project"
               " (default: .)~n"
-              "-h                    print help and exit~n"
+              "-h                      print help and exit~n"
               "~n"
               "COMMANDS~n"
               "~n"
-              "build                 build all components~n"
-              "build <component>...  build one or more components~n"
-              "help                  print help and exit~n">>,
+              "build                   build all components~n"
+              "build <component>...    build one or more components~n"
+              "compile <component>...  compile one or more components~n"
+              "help                    print help and exit~n">>,
             [ProgramName]).
+
+-spec load_manifest(command_line_options()) -> eon_manifest:manifest().
+load_manifest(Options) ->
+  Root = maps:get(root, Options, <<".">>),
+  Path = filename:join(Root, "eon.erl"),
+  case eon_manifest:load(Path) of
+    {ok, Manifest} ->
+      Manifest;
+    {error, Reason} ->
+      eon_log:fatal("cannot load manifest from ~ts: ~tp", [Path, Reason])
+  end.
 
 -spec cmd_build(command_line_data()) -> ok.
 cmd_build(#{options := Options, arguments := Args}) ->
-  Root = maps:get(root, Options, <<".">>),
-  ManifestPath = filename:join(Root, "eon.erl"),
-  case eon_manifest:load(ManifestPath) of
-    {ok, Manifest} ->
-      Components = case Args of
-                     [] ->    eon_manifest:component_names(Manifest);
-                     Names -> [erlang:binary_to_atom(Name) || Name <- Names]
-                   end,
-      build(Components, Manifest, Options);
-    {error, Reason} ->
-      eon_log:fatal("cannot load manifest from ~ts: ~tp",
-                    [ManifestPath, Reason])
-  end.
+  Manifest = load_manifest(Options),
+  Components = case Args of
+                 [] ->    eon_manifest:component_names(Manifest);
+                 Names -> [erlang:binary_to_atom(Name) || Name <- Names]
+               end,
+  compile(Components, Manifest, #{}),
+  build(Components, Manifest, Options).
 
--spec build(ComponentNames, eon_manifest:manifest(), Options) -> ok when
-    ComponentNames :: [atom()],
-    Options :: #{atom() := binary()}.
+-spec build(ComponentNames, eon_manifest:manifest(),
+            command_line_options()) -> ok when
+    ComponentNames :: [atom()].
 build([], _Manifest, _Options) ->
   ok;
 build([ComponentName | ComponentNames], Manifest, Options) ->
   eon_log:info("building component ~ts", [ComponentName]),
   case eon_manifest:build(ComponentName, Manifest) of
-    {ok, ArtifactPath, Warnings} ->
-      lists:foreach(fun (Warning) ->
-                        eon_log:info("warning: ~tp", [Warning])
-                    end, Warnings),
+    {ok, ArtifactPath} ->
       eon_log:info("component built at ~ts", [ArtifactPath]),
       build(ComponentNames, Manifest, Options);
     {error, Reason} ->
       eon_log:fatal("cannot build component ~ts: ~tp",
+                    [ComponentName, Reason])
+  end.
+
+-spec cmd_compile(command_line_data()) -> ok.
+cmd_compile(#{options := Options, arguments := Args}) ->
+  Manifest = load_manifest(Options),
+  Components = case Args of
+                 [] ->    eon_manifest:component_names(Manifest);
+                 Names -> [erlang:binary_to_atom(Name) || Name <- Names]
+               end,
+  compile(Components, Manifest, Options).
+
+-spec compile(ComponentNames, eon_manifest:manifest(),
+              command_line_options()) -> ok when
+    ComponentNames :: [atom()].
+compile([], _Manifest, _Options) ->
+  ok;
+compile([ComponentName | ComponentNames], Manifest, Options) ->
+  case eon_manifest:compile(ComponentName, Manifest) of
+    {ok, Diagnostics} ->
+      lists:foreach(fun (Diagnostic) ->
+                        eon_log:info("warning: ~tp", [Diagnostic])
+                    end, Diagnostics),
+      eon_log:info("component compiled"),
+      compile(ComponentNames, Manifest, Options);
+    {error, Reason} ->
+      eon_log:fatal("cannot compile component ~ts: ~tp",
                     [ComponentName, Reason])
   end.
 
@@ -135,6 +170,8 @@ parse_command_line([Name | RawArgs], options, Acc) ->
     case Name of
       <<"build">> ->
         {ok, build};
+      <<"compile">> ->
+        {ok, compile};
       <<"help">> ->
         {ok, help};
       _ ->

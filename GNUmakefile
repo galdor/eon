@@ -14,7 +14,7 @@ ebin/%.beam: src/%.erl
 	erlc $(ERLC_OPTIONS) -o $(dir $@) $<
 
 clean:
-	$(RM) eon $(wildcard ebin/*.beam)
+	$(RM) eon $(wildcard ebin/*)
 
 FORCE:
 

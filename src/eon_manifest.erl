@@ -1,6 +1,6 @@
 -module(eon_manifest).
 
--export([component_names/1, load/1, build/2]).
+-export([component_names/1, load/1, build/2, compile/2]).
 
 -export_type([manifest/0, project/0,
               dependency_type/0, dependency/0, git_dependency/0,
@@ -15,6 +15,10 @@
       | {unknown_component_type, atom()}
       | {unsupported_component_type, atom()}
       | {escript, eon_escript:error_reason()}.
+
+-type compilation_error_reason() ::
+        {unknown_component, atom()}
+      | {unknown_component_type, atom()}.
 
 -type manifest() ::
         #{root := file:filename_all(),
@@ -81,15 +85,14 @@ load(Path) ->
   end.
 
 -spec build(ComponentName :: atom(), manifest()) ->
-        {ok, ArtifactPath, Warnings} | {error, build_error_reason()} when
-    ArtifactPath :: unicode:chardata(),
-    Warnings :: list().
+        {ok, ArtifactPath} | {error, build_error_reason()} when
+    ArtifactPath :: unicode:chardata().
 build(ComponentName, Manifest = #{components := Components}) ->
   case maps:find(ComponentName, Components) of
     {ok, Component = #{type := escript}} ->
       case eon_escript:build(Component, Manifest) of
-        {ok, EscriptPath, Warnings} ->
-          {ok, EscriptPath, Warnings};
+        {ok, EscriptPath} ->
+          {ok, EscriptPath};
         {error, Reason} ->
           {error, Reason}
       end;
@@ -99,4 +102,33 @@ build(ComponentName, Manifest = #{components := Components}) ->
       {error, {unknown_component_type, Type}};
     error ->
       {error, {unknown_component, ComponentName}}
+  end.
+
+-spec compile(ComponentName :: atom(), manifest()) ->
+        {ok, Diagnostics} | {error, compilation_error_reason()} when
+    Diagnostics :: [eon_compiler:diagnostic()].
+compile(ComponentName, Manifest = #{components := Components}) ->
+  case maps:find(ComponentName, Components) of
+    {ok, Component = #{type := Type}} when
+        Type =:= escript; Type =:= release ->
+      Apps = maps:get(applications, Component, []),
+      compile(Apps, Manifest, []);
+    {ok, #{type := Type}} ->
+      {error, {unknown_component_type, Type}};
+    error ->
+      {error, {unknown_component, ComponentName}}
+  end.
+
+-spec compile(Apps, manifest(), Diagnostics) ->
+        {ok, Diagnostics} | {error, compilation_error_reason()} when
+    Apps :: [atom()],
+    Diagnostics :: [eon_compiler:diagnostic()].
+compile([], _Manifest, Diagnostics) ->
+  {ok, lists:flatten(Diagnostics)};
+compile([App | Apps], Manifest, Diagnostics) ->
+  case eon_app:compile(App, Manifest) of
+    {ok, AppDiagnostics} ->
+      compile(Apps, Manifest, [AppDiagnostics | Diagnostics]);
+    {error, Reason} ->
+      {error, Reason}
   end.

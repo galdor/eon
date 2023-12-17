@@ -19,31 +19,35 @@
 -type column() :: pos_integer().
 
 -spec compile_file(file:filename_all(), eon_manifest:manifest()) ->
-        {ok, {eon_fs:path(), binary()}, Diagnostics} |
-        {error, error_reason()} when
+        {ok, Diagnostics} | {error, error_reason()} when
     Diagnostics :: [diagnostic()].
-compile_file(Filename, _Manifest) ->
+compile_file(Filename, _Manifest = #{root := Root}) ->
   eon_log:debug(1, "compiling ~ts", [Filename]),
   case output_directory(Filename) of
-    {ok, OutputDirectory} ->
-      %% compile:file/2 only accepts strings
-      FilenameString = eon_fs:path_string(Filename),
-      OutputBasename = filename:basename(FilenameString, ".erl") ++ ".beam",
-      OutputPath = eon_fs:path(filename:join(OutputDirectory, OutputBasename)),
-      Opts = [binary,
-              return_errors,
-              return_warnings,
-              {error_location, column}],
-      case compile:file(FilenameString, Opts) of
-        {ok, _Mod, BeamData} ->
-          {ok, {OutputPath, BeamData}, []};
-        {ok, _Mod, BeamData, Warnings} ->
-          {ok, {OutputPath, BeamData}, diagnostics(Warnings, warning, [])};
-        {error, Errors, Warnings} ->
-          ErrorDiagnostics = diagnostics(Errors, error, []),
-          WarningDiagnostics = diagnostics(Warnings, warning, []),
-          Diagnostics =  ErrorDiagnostics ++ WarningDiagnostics,
-          {error, {diagnostics, Diagnostics}}
+    {ok, RelOutputDirectory} ->
+      OutputDirectory = filename:join(Root, RelOutputDirectory),
+      case eon_fs:ensure_directory(OutputDirectory) of
+        ok ->
+          %% compile:file/2 only accepts strings
+          FilenameString = eon_fs:path_string(Filename),
+          OutputDirectoryString = eon_fs:path_string(OutputDirectory),
+          Opts = [return_errors,
+                  return_warnings,
+                  {error_location, column},
+                  {outdir, OutputDirectoryString}],
+          case compile:file(FilenameString, Opts) of
+            {ok, _Mod} ->
+              {ok, []};
+            {ok, _Mod, Warnings} ->
+              {ok, diagnostics(Warnings, warning, [])};
+            {error, Errors, Warnings} ->
+              ErrorDiagnostics = diagnostics(Errors, error, []),
+              WarningDiagnostics = diagnostics(Warnings, warning, []),
+              Diagnostics =  ErrorDiagnostics ++ WarningDiagnostics,
+              {error, {diagnostics, Diagnostics}}
+          end;
+        {error, Reason} ->
+          {error, {ensure_directory, OutputDirectory, Reason}}
       end;
     {error, Reason} ->
       {error, Reason}

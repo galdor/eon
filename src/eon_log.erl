@@ -37,7 +37,8 @@ stop() ->
 
 -spec log(level(), io:format(), [term()]) -> ok.
 log(Level, Format, Args) ->
-  ?MODULE ! {log, Level, Format, Args}.
+  ?MODULE ! {log, Level, Format, Args},
+  ok.
 
 -spec debug(pos_integer(), io:format()) -> ok.
 debug(DebugLevel, Format) ->
