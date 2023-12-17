@@ -70,12 +70,12 @@ output_directory(Filename) ->
       {error, {invalid_source_file_path, Filename}}
   end.
 
--spec diagnostics(compile:errors(), error | warning, [diagnostic()]) ->
+-spec diagnostics(compile:errors(), error | warning, [[diagnostic()]]) ->
         [diagnostic()].
 diagnostics([], _Type, Acc) ->
   lists:flatten(Acc);
 diagnostics([{Filename, Infos} | Errors], Type, Acc) ->
   diagnostics(Errors, Type,
-              [[{eon_fs:path(Filename), Type, Location, Description} ||
-                 {Location, _Module, Description} <- Infos] |
+              [[{eon_fs:path(Filename), Type, Location, Description}
+                || {Location, _Module, Description} <- Infos] |
                Acc]).

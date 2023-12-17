@@ -63,6 +63,7 @@
 -spec make(file:filename_all()) -> manifest().
 make(Root) ->
   #{root => Root,
+    dependencies => #{},
     components => #{}}.
 
 -spec component_names(manifest()) -> [atom()].
@@ -122,7 +123,7 @@ compile(ComponentName, Manifest = #{components := Components}) ->
 -spec compile(Apps, manifest(), Diagnostics) ->
         {ok, Diagnostics} | {error, compilation_error_reason()} when
     Apps :: [atom()],
-    Diagnostics :: [eon_compiler:diagnostic()].
+    Diagnostics :: [[eon_compiler:diagnostic()]].
 compile([], _Manifest, Diagnostics) ->
   {ok, lists:flatten(Diagnostics)};
 compile([App | Apps], Manifest, Diagnostics) ->

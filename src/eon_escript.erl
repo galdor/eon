@@ -6,7 +6,8 @@
 
 -type error_reason() ::
         {unknown_escript, string()}
-      | {build, term()}.
+      | {build, term()}
+      | eon_app:error_reason().
 
 -type file() ::
         {file:name(), binary()}.
@@ -68,14 +69,13 @@ beam_files([App | Apps], Manifest, Acc) ->
 
 -spec application_resource_files(eon_manifest:escript(),
                                  eon_manifest:manifest()) ->
-        {ok, [file:filename_all()]} | {error, error_reason()}.
+        {ok, [eon_fs:path()]} | {error, error_reason()}.
 application_resource_files(#{applications := Apps}, Manifest) ->
   application_resource_files(Apps, Manifest, []).
 
--spec application_resource_files(eon_manifest:escript(),
-                                 eon_manifest:manifest(),
-                                 [file:filename_all()]) ->
-        {ok, [file:filename_all()]} | {error, error_reason()}.
+-spec application_resource_files([atom()], eon_manifest:manifest(),
+                                 [eon_fs:path()]) ->
+        {ok, [eon_fs:path()]} | {error, error_reason()}.
 application_resource_files([], _Manifest, Paths) ->
   {ok, lists:reverse(Paths)};
 application_resource_files([App | Apps], Manifest, Paths) ->
@@ -86,6 +86,6 @@ application_resource_files([App | Apps], Manifest, Paths) ->
       {error, Reason}
   end.
 
--spec file_directories(file()) -> [file:name()].
+-spec file_directories([file:filename_all()]) -> [file:filename_all()].
 file_directories(Files) ->
   maps:keys(#{filename:dirname(Filename) => true || Filename <- Files}).

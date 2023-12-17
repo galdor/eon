@@ -15,7 +15,7 @@
           options := command_line_options()}.
 
 -type command_line_options() ::
-        #{atom() := binary()}.
+        #{atom() := boolean() | binary()}.
 
 main(Args) ->
   process_flag(trap_exit, true),

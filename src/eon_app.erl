@@ -5,6 +5,8 @@
          resource_file_source_path/2, resource_file_path/2,
          compile/2]).
 
+-export_type([error_reason/0]).
+
 -type error_reason() ::
         {resource_file_not_found, string()}
       | {empty_resource_file, string()}
