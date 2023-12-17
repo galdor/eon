@@ -93,7 +93,8 @@ finalize_specification_version(Specification = {application, App, Properties},
       Args = ["describe", "--tags", "--dirty"],
       Options = #{first_line => true},
       Version = eon_system:exec(Program, Args, Options),
-      Properties2 = lists:keystore(vsn, 1, Properties, {vsn, Version}),
+      VersionString = eon_string:string(Version),
+      Properties2 = lists:keystore(vsn, 1, Properties, {vsn, VersionString}),
       {application, App, Properties2};
     {vsn, _} ->
       Specification;
