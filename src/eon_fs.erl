@@ -31,32 +31,24 @@ file_exists(Path) ->
       {error, Reason}
   end.
 
--spec add_file_permissions(file:filename_all(), non_neg_integer()) ->
-        ok | {error, Reason} when
-    Reason :: file:posix() | badarg.
+-spec add_file_permissions(file:filename_all(), non_neg_integer()) -> ok.
 add_file_permissions(Path, Mask) ->
   case file:read_file_info(Path) of
     {ok, #file_info{mode = Mode}} ->
       file:change_mode(Path, Mode bor Mask);
     {error, Reason} ->
-      {error, Reason}
+      throw({error, {read_file_info, Path, Reason}})
   end.
 
--spec find_files(file:filename_all()) ->
-        {ok, [file:filename_all()]} | {error, term()}.
+-spec find_files(file:filename_all()) -> [file:filename_all()].
 find_files(DirPath) ->
   find_files(DirPath, #{}).
 
 -spec find_files(file:filename_all(), find_files_options()) ->
-        {ok, [file:filename_all()]} | {error, term()}.
+        [file:filename_all()].
 find_files(DirPath, Opts) ->
-  try
-    Paths = find_files(path(DirPath), Opts, []),
-    {ok, lists:flatten(Paths)}
-  catch
-    throw:{error, Reason} ->
-      {error, Reason}
-  end.
+  Paths = find_files(path(DirPath), Opts, []),
+  lists:flatten(Paths).
 
 -spec find_files(path(), find_files_options(), [path()]) ->
         [file:filename_all()].
@@ -73,12 +65,8 @@ find_files(Path, Opts, Acc) ->
       case Opts of
         #{filter := Filter} ->
           case Filter(Path) of
-            {ok, true} ->
-              [Path | Acc];
-            {ok, false} ->
-              Acc;
-            {error, Reason} ->
-              throw({error, Reason})
+            true  -> [Path | Acc];
+            false -> Acc
           end;
         _ ->
           [Path | Acc]
@@ -87,13 +75,17 @@ find_files(Path, Opts, Acc) ->
       throw({error, {file_info, Path, Reason}})
   end.
 
--spec ensure_directory(file:filename_all()) ->
-        ok | {error, file:posix()}.
+-spec ensure_directory(file:filename_all()) -> ok.
 ensure_directory(Directory) ->
   %% filelib:ensure_dir/1 only creates the parent directories while
   %% filelib:ensure_path/1 actually creates the entire path. Yes the name of
   %% the function does not make any sense.
-  filelib:ensure_path(Directory).
+  case filelib:ensure_path(Directory) of
+    ok ->
+      ok;
+    {error, Reason} ->
+      throw({error, {ensure_path, Directory, Reason}})
+  end.
 
 -spec path(file:filename_all()) -> path().
 path(Filename) when is_list(Filename) ->

@@ -2,33 +2,23 @@
 
 -export([exec/2, exec/3]).
 
--export_type([exec_error_reason/0]).
-
--type exec_error_reason() ::
-        program_not_found
-      | {program_failure, Status :: integer(), iodata()}
-      | {program_killed, Signal :: integer(), iodata()}.
-
 -type exec_options() ::
    #{first_line => boolean()}.
 
--spec exec(file:name_all(), [string()]) ->
-        {ok, binary()} | {error, exec_error_reason()}.
+-spec exec(file:name_all(), [string()]) -> binary().
 exec(ProgramName, Arguments) ->
   exec(ProgramName, Arguments, #{}).
 
--spec exec(file:name_all(), [string()], exec_options()) ->
-        {ok, binary()} | {error, exec_error_reason()}.
+-spec exec(file:name_all(), [string()], exec_options()) -> binary().
 exec(ProgramName, Arguments, Options) ->
   case os:find_executable(ProgramName) of
     ProgramPath when is_list(ProgramPath) ->
       exec_program(ProgramPath, Arguments, Options);
     false ->
-      {error, program_not_found}
+      throw({error, {program_not_found, ProgramName}})
   end.
 
--spec exec_program(string(), [string()], exec_options()) ->
-        {ok, binary()} | {error, exec_error_reason()}.
+-spec exec_program(string(), [string()], exec_options()) -> binary().
 exec_program(ProgramPath, Arguments, Options) ->
   PortOptions = [{args, Arguments},
                  use_stdio,
@@ -36,41 +26,33 @@ exec_program(ProgramPath, Arguments, Options) ->
                  binary,
                  exit_status],
   Port = open_port({spawn_executable, ProgramPath}, PortOptions),
-  watch_program(Port, Options, [], undefined).
+  watch_program(Port, Options, []).
 
--spec watch_program(port(), exec_options(), iodata(), term()) ->
-        {ok, binary()} | {error, exec_error_reason()}.
-watch_program(Port, Options, Output, Error) ->
+-spec watch_program(port(), exec_options(), iodata()) -> binary().
+watch_program(Port, Options, Output) ->
   receive
     {Port, {data, Data}} ->
-      watch_program(Port, Options, [Data | Output], Error);
+      watch_program(Port, Options, [Data | Output]);
     {Port, {exit_status, 0}} ->
-      watch_program(Port, Options, Output, Error);
+      watch_program(Port, Options, Output);
     {Port, {exit_status, Code}} when Code < 128 ->
       ErrorOutput = eon_string:binary(lists:reverse(Output)),
-      watch_program(Port, Options, Output,
-                    {program_failure, Code, ErrorOutput});
+      throw({error, {program_failure, Code, ErrorOutput}});
     {Port, {exit_status, Code}} ->
       Signal = Code - 128,
       ErrorOutput = eon_string:binary(lists:reverse(Output)),
-      watch_program(Port, Options, Output,
-                    {program_killed, Signal, ErrorOutput});
+      throw({error, {program_killed, Signal, ErrorOutput}});
     {'EXIT', Port, _} ->
-      case Error of
-        undefined ->
-          Output2 = eon_string:binary(lists:reverse(Output)),
-          case maps:get(first_line, Options, false) of
-            true ->
-              case binary:match(Output2, <<$\n>>) of
-                {Position, _} ->
-                  {ok, binary:part(Output2, {0, Position})};
-                nomatch ->
-                  {ok, Output2}
-              end;
-            false ->
-              {ok, Output2}
+      Output2 = eon_string:binary(lists:reverse(Output)),
+      case maps:get(first_line, Options, false) of
+        true ->
+          case binary:match(Output2, <<$\n>>) of
+            {Position, _} ->
+              binary:part(Output2, {0, Position});
+            nomatch ->
+              Output2
           end;
-        _ ->
-          {error, Error}
+        false ->
+          Output2
       end
   end.

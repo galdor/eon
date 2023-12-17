@@ -2,13 +2,6 @@
 
 -export([main/1]).
 
--type command_line_error_reason() ::
-        missing_command
-      | {missing_option_value, char()}
-      | {unknown_option, char()}
-      | {invalid_long_option, binary()}
-      | {unknown_command, binary()}.
-
 -type command_line_data() ::
         #{command := atom(),
           arguments := [binary()],
@@ -21,16 +14,14 @@ main(Args) ->
   process_flag(trap_exit, true),
   eon_log:start(#{debug_level => 1}),
   case parse_command_line(Args) of
-    {ok, #{command := help}} ->
+    #{command := help} ->
       usage();
-    {ok, #{options := #{help := true}}} ->
+    #{options := #{help := true}} ->
       usage();
-    {ok, CommandLineData = #{command := compile}} ->
+    CommandLineData = #{command := compile} ->
       cmd_compile(CommandLineData);
-    {ok, CommandLineData = #{command := build}} ->
-      cmd_build(CommandLineData);
-    {error, Reason} ->
-      eon_log:fatal("invalid command line arguments: ~tp", [Reason])
+    CommandLineData = #{command := build} ->
+      cmd_build(CommandLineData)
   end,
   eon_log:stop().
 
@@ -56,12 +47,7 @@ usage() ->
 load_manifest(Options) ->
   Root = maps:get(root, Options, <<".">>),
   Path = filename:join(Root, "eon.erl"),
-  case eon_manifest:load(Path) of
-    {ok, Manifest} ->
-      Manifest;
-    {error, Reason} ->
-      eon_log:fatal("cannot load manifest from ~ts: ~tp", [Path, Reason])
-  end.
+  eon_manifest:load(Path).
 
 -spec cmd_build(command_line_data()) -> ok.
 cmd_build(#{options := Options, arguments := Args}) ->
@@ -80,14 +66,9 @@ build([], _Manifest, _Options) ->
   ok;
 build([ComponentName | ComponentNames], Manifest, Options) ->
   eon_log:info("building component ~ts", [ComponentName]),
-  case eon_manifest:build(ComponentName, Manifest) of
-    {ok, ArtifactPath} ->
-      eon_log:info("component built at ~ts", [ArtifactPath]),
-      build(ComponentNames, Manifest, Options);
-    {error, Reason} ->
-      eon_log:fatal("cannot build component ~ts: ~tp",
-                    [ComponentName, Reason])
-  end.
+  ArtifactPath = eon_manifest:build(ComponentName, Manifest),
+  eon_log:info("component built at ~ts", [ArtifactPath]),
+  build(ComponentNames, Manifest, Options).
 
 -spec cmd_compile(command_line_data()) -> ok.
 cmd_compile(#{options := Options, arguments := Args}) ->
@@ -104,61 +85,47 @@ cmd_compile(#{options := Options, arguments := Args}) ->
 compile([], _Manifest, _Options) ->
   ok;
 compile([ComponentName | ComponentNames], Manifest, Options) ->
-  case eon_manifest:compile(ComponentName, Manifest) of
-    {ok, Diagnostics} ->
-      lists:foreach(fun (Diagnostic) ->
-                        eon_log:info("warning: ~tp", [Diagnostic])
-                    end, Diagnostics),
-      eon_log:info("component compiled"),
-      compile(ComponentNames, Manifest, Options);
-    {error, Reason} ->
-      eon_log:fatal("cannot compile component ~ts: ~tp",
-                    [ComponentName, Reason])
-  end.
+  Diagnostics = eon_manifest:compile(ComponentName, Manifest),
+  lists:foreach(fun (Diagnostic) ->
+                    eon_log:info("warning: ~tp", [Diagnostic])
+                end, Diagnostics),
+  eon_log:info("component compiled"),
+  compile(ComponentNames, Manifest, Options).
 
--spec parse_command_line([string()]) ->
-        {ok, command_line_data()} | {error, command_line_error_reason()}.
+-spec parse_command_line([string()]) -> command_line_data().
 parse_command_line(Args) ->
   RawArgs = [eon_string:binary(Arg) || Arg <- Args],
   Acc = #{arguments => [], options => #{}},
   parse_command_line(RawArgs, options, Acc).
 
--spec parse_command_line([binary()], State, map()) ->
-        {ok, command_line_data()} | {error, command_line_error_reason()} when
+-spec parse_command_line([binary()], State, map()) -> command_line_data() when
     State :: options | arguments.
 parse_command_line([], _State, #{command := Command,
                                  arguments := Arguments,
                                  options := Options}) ->
-  {ok, #{command => Command,
-         arguments => lists:reverse(Arguments),
-         options => Options}};
+  #{command => Command,
+    arguments => lists:reverse(Arguments),
+    options => Options};
 parse_command_line([], options, Acc = #{options := #{help := true}}) ->
   parse_command_line([], options, Acc#{command => help});
 parse_command_line([], options, _Acc) ->
-  {error, missing_command};
+  throw({error, missing_command});
 parse_command_line([<<$-, Option>> | RawArgs], options,
                    Acc = #{options := Options}) ->
-  case
+  {Options2, RawArgs3} =
     case {Option, RawArgs} of
       {$C, []} ->
-        {error, {missing_option_value, $C}};
+        throw({error, {missing_option_value, $C}});
       {$C, [Path | RawArgs2]} ->
-        {ok, Options#{root => Path}, RawArgs2};
+        {Options#{root => Path}, RawArgs2};
       {$h, _} ->
-        {ok, Options#{help => true}, RawArgs};
+        {Options#{help => true}, RawArgs};
       _ ->
-        error
-    end
-  of
-    {ok, Options2, RawArgs3} ->
-      parse_command_line(RawArgs3, options, Acc#{options => Options2});
-    {error, Reason} ->
-      {error, Reason};
-    error ->
-      {error, {unknown_option, Option}}
-  end;
+        throw({error, {unknown_option, [$-, Option]}})
+    end,
+  parse_command_line(RawArgs3, options, Acc#{options => Options2});
 parse_command_line([Option = <<$-, _/binary>> | _], options, _Acc) ->
-  {error, {invalid_long_option, Option}};
+  throw({error, {invalid_long_option, Option}});
 parse_command_line(RawArgs, options, Acc = #{command := _}) ->
   parse_command_line(RawArgs, arguments, Acc);
 parse_command_line([Argument | RawArgs], arguments,
@@ -166,20 +133,11 @@ parse_command_line([Argument | RawArgs], arguments,
   parse_command_line(RawArgs, arguments,
                      Acc#{arguments => [Argument | Arguments]});
 parse_command_line([Name | RawArgs], options, Acc) ->
-  case
+  Command =
     case Name of
-      <<"build">> ->
-        {ok, build};
-      <<"compile">> ->
-        {ok, compile};
-      <<"help">> ->
-        {ok, help};
-      _ ->
-        error
-    end
-  of
-    {ok, Command} ->
-      parse_command_line(RawArgs, options, Acc#{command => Command});
-    error ->
-      {error, {unknown_command, Name}}
-  end.
+      <<"build">> -> build;
+      <<"compile">> -> compile;
+      <<"help">> -> help;
+      _ -> error
+    end,
+  parse_command_line(RawArgs, options, Acc#{command => Command}).

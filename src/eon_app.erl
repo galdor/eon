@@ -5,142 +5,85 @@
          resource_file_source_path/2, resource_file_path/2,
          compile/2]).
 
--export_type([error_reason/0]).
-
--type error_reason() ::
-        {resource_file_not_found, string()}
-      | {empty_resource_file, string()}
-      | {invalid_resource_file, string(), Reason :: term()}
-      | {invalid_resource_file_path, eon_fs:path()}
-      | {missing_resource_file_property, atom()}
-      | {write_file, eon_fs:path(), file:posix() | term()}
-      | {external_program, [string()], eon_system:exec_error_reason()}
-      | term().
-
 %% TODO
 -type specification() ::
         term().
 
--spec source_directory(atom(), eon_manifest:manifest()) ->
-        {ok, binary()} | {error, error_reason()}.
+-spec source_directory(atom(), eon_manifest:manifest()) -> binary().
 source_directory(App, Manifest) ->
-  case resource_file_source_path(App, Manifest) of
-    {ok, Path} ->
-      {ok, eon_fs:path(filename:dirname(Path))};
-    {error, Reason} ->
-      {error, Reason}
-  end.
+  Path = resource_file_source_path(App, Manifest),
+  eon_fs:path(filename:dirname(Path)).
 
--spec source_files(atom(), eon_manifest:manifest()) ->
-        {ok, [eon_fs:path()]} | {error, error_reason()}.
+-spec source_files(atom(), eon_manifest:manifest()) -> [eon_fs:path()].
 source_files(App, Manifest) ->
-  case source_directory(App, Manifest) of
-    {ok, DirPath} ->
-      Filter = fun (Path) ->
-                   {ok, filename:extension(Path) =:= <<".erl">>}
-               end,
-      eon_fs:find_files(DirPath, #{filter => Filter});
-    {error, Reason} ->
-      {error, Reason}
-  end.
+  DirPath = source_directory(App, Manifest),
+  Filter = fun (Path) ->
+               filename:extension(Path) =:= <<".erl">>
+           end,
+  eon_fs:find_files(DirPath, #{filter => Filter}).
 
--spec beam_files(atom(), eon_manifest:manifest()) ->
-        {ok, [eon_fs:path()]} | {error, error_reason()}.
+-spec beam_files(atom(), eon_manifest:manifest()) -> [eon_fs:path()].
 beam_files(App, Manifest) ->
-  case source_directory(App, Manifest) of
-    {ok, SourceDirPath} ->
-      BeamDirPath = filename:join(filename:dirname(SourceDirPath), "ebin"),
-      Filter = fun (Path) ->
-                   {ok, filename:extension(Path) =:= <<".beam">>}
-               end,
-      eon_fs:find_files(BeamDirPath, #{filter => Filter});
-    {error, Reason} ->
-      {error, Reason}
-  end.
+  SourceDirPath = source_directory(App, Manifest),
+  BeamDirPath = filename:join(filename:dirname(SourceDirPath), "ebin"),
+  Filter = fun (Path) ->
+               filename:extension(Path) =:= <<".beam">>
+           end,
+  eon_fs:find_files(BeamDirPath, #{filter => Filter}).
 
--spec generate_resource_file(atom(), eon_manifest:manifest()) ->
-        {ok, eon_fs:path()} | {error, error_reason()}.
+-spec generate_resource_file(atom(), eon_manifest:manifest()) -> eon_fs:path().
 generate_resource_file(App, Manifest) ->
-  case load_specification(App, Manifest) of
-    {ok, Path, Specification} ->
-      eon_log:debug(1, "processing ~ts", [Path]),
-      case finalize_specification(Specification, Manifest) of
-        {ok, Specification2} ->
-          case resource_file_output_path(Path) of
-            {ok, OutputPath} ->
-              Data = io_lib:print(Specification2, 1, 80, -1),
-              case file:write_file(OutputPath, Data) of
-                ok ->
-                  {ok, OutputPath};
-                {error, Reason} ->
-                  {error, {write_file, OutputPath, Reason}}
-              end;
-            {error, Reason} ->
-              {error, Reason}
-          end;
-        {error, Reason} ->
-          {error, Reason}
-      end;
+  {Path, Specification} = load_specification(App, Manifest),
+  eon_log:debug(1, "processing ~ts", [Path]),
+  Specification2 = finalize_specification(Specification, Manifest),
+  OutputPath = resource_file_output_path(Path),
+  Data = io_lib:print(Specification2, 1, 80, -1),
+  case file:write_file(OutputPath, Data) of
+    ok ->
+      OutputPath;
     {error, Reason} ->
-      {error, Reason}
+      throw({error, {write_file, OutputPath, Reason}})
   end.
 
 -spec load_specification(atom(), eon_manifest:manifest()) ->
-        {ok, eon_fs:path(), specification()} | {error, error_reason()}.
+        {eon_fs:path(), specification()}.
 load_specification(App, Manifest) ->
-  case resource_file_source_path(App, Manifest) of
-    {ok, Path} ->
-      case file:consult(Path) of
-        {ok, []} ->
-          {error, {empty_resource_file, Path}};
-        {ok, [Specification = {application, App, Properties} | _]} when
-            is_list(Properties) ->
-          {ok, Path, Specification};
-        {ok, [{application, _, Properties} | _]} when is_list(Properties) ->
-          {error, {invalid_specification, Path, application_name_mismatch}};
-        {ok, [_Specification | _]} ->
-          {error, {invalid_specification, Path, invalid_format}};
-        {error, Reason} ->
-          {error, {invalid_specification, Path, Reason}}
-      end;
+  Path = resource_file_source_path(App, Manifest),
+  case file:consult(Path) of
+    {ok, []} ->
+      throw({error, {empty_resource_file, Path}});
+    {ok, [Specification = {application, App, Properties} | _]} when
+        is_list(Properties) ->
+      {Path, Specification};
+    {ok, [{application, _, Properties} | _]} when is_list(Properties) ->
+      throw({error, {invalid_specification, Path, application_name_mismatch}});
+    {ok, [_Specification | _]} ->
+      throw({error, {invalid_specification, Path, invalid_format}});
     {error, Reason} ->
-      {error, Reason}
+      throw({error, {invalid_specification, Path, Reason}})
   end.
 
 -spec finalize_specification(specification(), eon_manifest:manifest()) ->
-        {ok, specification()} | {error, error_reason()}.
-finalize_specification(Specification, Manifest) ->
-  Fun = fun
-          Fun (S, []) ->
-            {ok, S};
-          Fun (S, [FinalizeFun | FinalizeFuns]) ->
-            case FinalizeFun(S, Manifest) of
-              {ok, S2} ->
-                Fun(S2, FinalizeFuns);
-              {error, Reason} ->
-                {error, Reason}
-            end
-        end,
-  Fun(Specification, [fun finalize_specification_modules/2,
-                      fun finalize_specification_version/2]).
+        specification().
+finalize_specification(Specification0, Manifest) ->
+  Funs = [fun finalize_specification_modules/2,
+          fun finalize_specification_version/2],
+  lists:foldl(fun (Fun, Specification) ->
+                  Fun(Specification, Manifest)
+              end, Specification0, Funs).
 
 -spec finalize_specification_modules(specification(),
                                      eon_manifest:manifest()) ->
-        {ok, specification()} | {error, error_reason()}.
+        specification().
 finalize_specification_modules({application, App, Properties}, Manifest) ->
-  case eon_app:source_files(App, Manifest) of
-    {ok, Paths} ->
-      Modules = [binary_to_atom(filename:basename(Path, ".erl"))
-                 || Path <- Paths],
-      Properties2 = lists:keystore(mods, 1, Properties, {mods, Modules}),
-      {ok, {application, App, Properties2}};
-    {error, Reason} ->
-      {error, Reason}
-  end.
+  Paths = eon_app:source_files(App, Manifest),
+  Modules = [binary_to_atom(filename:basename(Path, ".erl")) || Path <- Paths],
+  Properties2 = lists:keystore(mods, 1, Properties, {mods, Modules}),
+  {application, App, Properties2}.
 
 -spec finalize_specification_version(specification(),
                                      eon_manifest:manifest()) ->
-        {ok, specification()} | {error, error_reason()}.
+        specification().
 finalize_specification_version(Specification = {application, App, Properties},
                                _Manifest) ->
   case lists:keyfind(vsn, 1, Properties) of
@@ -148,21 +91,17 @@ finalize_specification_version(Specification = {application, App, Properties},
       Program = "git",
       Args = ["describe", "--tags", "--dirty"],
       Options = #{first_line => true},
-      case eon_system:exec(Program, Args, Options) of
-        {ok, Version} ->
-          Properties2 = lists:keystore(vsn, 1, Properties, {vsn, Version}),
-          {ok, {application, App, Properties2}};
-        {error, Reason} ->
-          {error, {external_program, [Program | Args], Reason}}
-      end;
+      Version = eon_system:exec(Program, Args, Options),
+      Properties2 = lists:keystore(vsn, 1, Properties, {vsn, Version}),
+      {application, App, Properties2};
     {vsn, _} ->
-      {ok, Specification};
+      Specification;
     false ->
-      {error, {missing_resource_file_property, vsn}}
+      throw({error, {missing_resource_file_property, vsn}})
   end.
 
 -spec resource_file_source_path(atom(), eon_manifest:manifest()) ->
-        {ok, eon_fs:path()} | {error, error_reason()}.
+        eon_fs:path().
 resource_file_source_path(App, #{root := Root}) ->
   AppName = erlang:atom_to_list(App),
   AppFilename = AppName ++ ".app.src",
@@ -181,28 +120,18 @@ resource_file_source_path(App, #{root := Root}) ->
                  end, Paths)
   of
     {value, Path} ->
-      {ok, eon_fs:path(Path)};
+      eon_fs:path(Path);
     false ->
-      {error, {resource_file_not_found, AppFilename}}
+      throw({error, {resource_file_not_found, AppFilename}})
   end.
 
--spec resource_file_path(atom(), eon_manifest:manifest()) ->
-        {ok, eon_fs:path()} | {error, error_reason()}.
+-spec resource_file_path(atom(), eon_manifest:manifest()) -> eon_fs:path().
 resource_file_path(App, Manifest = #{root := Root}) ->
-  case resource_file_source_path(App, Manifest) of
-    {ok, Path} ->
-      case resource_file_output_path(Path) of
-        {ok, OutputPath} ->
-          {ok, filename:join(Root, OutputPath)};
-        {error, Reason} ->
-          {error, Reason}
-      end;
-    {error, Reason} ->
-      {error, Reason}
-  end.
+  Path = resource_file_source_path(App, Manifest),
+  OutputPath = resource_file_output_path(Path),
+  filename:join(Root, OutputPath).
 
--spec resource_file_output_path(file:filename_all()) ->
-        {ok, eon_fs:path()} | {error, error_reason()}.
+-spec resource_file_output_path(file:filename_all()) -> eon_fs:path().
 resource_file_output_path(Filename) ->
   %% Application resource files are stored in <app>/ebin/<basename>.app if the
   %% file is part of an application directory or ebin/<basename>.app if it is
@@ -212,39 +141,15 @@ resource_file_output_path(Filename) ->
   Basename = filename:basename(Path, ".src"),
   case lists:reverse(filename:split(Path)) of
     [_Basename, <<"src">>, AppName | Rest] ->
-      {ok, filename:join(lists:reverse(Rest) ++
-                           [AppName, <<"ebin">>, Basename])};
+      filename:join(lists:reverse(Rest) ++ [AppName, <<"ebin">>, Basename]);
     [_Basename, <<"src">> | Rest] ->
-      {ok, filename:join(lists:reverse(Rest) ++ [<<"ebin">>, Basename])};
+      filename:join(lists:reverse(Rest) ++ [<<"ebin">>, Basename]);
     _ ->
-      {error, {invalid_source_file_path, Filename}}
+      throw({error, {invalid_source_file_path, Filename}})
   end.
 
--spec compile(atom(), eon_manifest:manifest()) ->
-        {ok, Diagnostics} | {error, error_reason()} when
-    Diagnostics :: [eon_compiler:diagnostic()].
+-spec compile(atom(), eon_manifest:manifest()) -> [eon_compiler:diagnostic()].
 compile(App, Manifest) ->
-  case generate_resource_file(App, Manifest) of
-    {ok, _Path} ->
-      case source_files(App, Manifest) of
-        {ok, Paths} ->
-          compile_files(Paths, Manifest, []);
-        {error, Reason} ->
-          {error, Reason}
-      end;
-    {error, Reason} ->
-      {error, Reason}
-  end.
-
--spec compile_files([eon_fs:path()], eon_manifest:manifest(), Diagnostics) ->
-        {ok, Diagnostics} | {error, error_reason()} when
-    Diagnostics :: [eon_compiler:diagnostic()].
-compile_files([], _Manifest, Diagnostics) ->
-  {ok, lists:flatten(Diagnostics)};
-compile_files([Path | Paths], Manifest, Diagnostics) ->
-  case eon_compiler:compile_file(Path, Manifest) of
-    {ok, FileDiagnostics} ->
-      compile_files(Paths, Manifest, Diagnostics ++ FileDiagnostics);
-    {error, Reason} ->
-      {error, Reason}
-  end.
+  _Path = generate_resource_file(App, Manifest),
+  Paths = source_files(App, Manifest),
+  lists:flatten([eon_compiler:compile_file(Path, Manifest) || Path <- Paths]).
