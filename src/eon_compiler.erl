@@ -14,10 +14,9 @@
 
 -spec compile_file(file:filename_all(), eon_manifest:manifest()) ->
         [diagnostic()].
-compile_file(Filename, _Manifest = #{root := Root}) ->
+compile_file(Filename, _Manifest) ->
   eon_log:debug(1, "compiling ~ts", [Filename]),
-  RelOutputDirectory = output_directory(Filename),
-  OutputDirectory = filename:join(Root, RelOutputDirectory),
+  OutputDirectory = output_directory(Filename),
   eon_fs:ensure_directory(OutputDirectory),
   %% compile:file/2 only accepts strings
   FilenameString = eon_fs:path_string(Filename),
@@ -46,10 +45,10 @@ output_directory(Filename) ->
   %% top-level src directory).
   Path = eon_fs:path(Filename),
   case lists:reverse(filename:split(Path)) of
-    [_Basename, <<"src">>, <<".">>] ->
-      filename:join(lists:reverse([<<"ebin">>]));
-    [_Basename, <<"src">>, AppName | _Rest] ->
-      filename:join(lists:reverse([<<"ebin">>, AppName]));
+    [_Basename, <<"src">>, AppName, <<"apps">> | Rest] ->
+      filename:join(lists:reverse(Rest) ++ [<<"apps">>, AppName, <<"ebin">>]);
+    [_Basename, <<"src">> | Rest] ->
+      filename:join(lists:reverse(Rest) ++ [<<"ebin">>]);
     _ ->
       throw({error, {invalid_source_file_path, Filename}})
   end.

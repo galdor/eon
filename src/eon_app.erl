@@ -127,10 +127,9 @@ resource_file_source_path(App, #{root := Root}) ->
   end.
 
 -spec resource_file_path(atom(), eon_manifest:manifest()) -> eon_fs:path().
-resource_file_path(App, Manifest = #{root := Root}) ->
+resource_file_path(App, Manifest) ->
   Path = resource_file_source_path(App, Manifest),
-  OutputPath = resource_file_output_path(Path),
-  filename:join(Root, OutputPath).
+  resource_file_output_path(Path).
 
 -spec resource_file_output_path(file:filename_all()) -> eon_fs:path().
 resource_file_output_path(Filename) ->
@@ -141,8 +140,9 @@ resource_file_output_path(Filename) ->
   Path = eon_fs:path(Filename),
   Basename = filename:basename(Path, ".src"),
   case lists:reverse(filename:split(Path)) of
-    [_Basename, <<"src">>, AppName | Rest] ->
-      filename:join(lists:reverse(Rest) ++ [AppName, <<"ebin">>, Basename]);
+    [_Basename, <<"src">>, AppName, <<"apps">> | Rest] ->
+      filename:join(lists:reverse(Rest) ++
+                      [<<"apps">>, AppName, <<"ebin">>, Basename]);
     [_Basename, <<"src">> | Rest] ->
       filename:join(lists:reverse(Rest) ++ [<<"ebin">>, Basename]);
     _ ->
