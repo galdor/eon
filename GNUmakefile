@@ -14,7 +14,9 @@ ebin/%.beam: src/%.erl
 	erlc $(ERLC_OPTIONS) -o $(dir $@) $<
 
 clean:
-	$(RM) eon $(wildcard ebin/*)
+	$(RM) eon examples/hello/hello
+	find . -type f -name \*.beam -delete
+	find . -type f -name \*.app -delete
 
 FORCE:
 
