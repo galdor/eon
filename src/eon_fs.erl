@@ -4,7 +4,7 @@
          add_file_permissions/2,
          find_files/1, find_files/2,
          ensure_directory/1,
-         path/1, path_string/1]).
+         path/1, path_string/1, simplify_path/1]).
 
 -export_type([path/0]).
 
@@ -98,3 +98,9 @@ path_string(Filename) when is_list(Filename) ->
   Filename;
 path_string(Filename) when is_binary(Filename) ->
   eon_string:string(Filename).
+
+-spec simplify_path(eon_fs:path()) -> eon_fs:path().
+simplify_path(<<"./", Path/binary>>) ->
+  Path;
+simplify_path(Path) ->
+  Path.

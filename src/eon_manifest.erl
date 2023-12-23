@@ -88,14 +88,13 @@ build(ComponentName, Manifest = #{components := Components}) ->
       throw({error, {unknown_component, ComponentName}})
   end.
 
--spec compile(ComponentName :: atom(), manifest()) ->
-        [eon_compiler:diagnostic()].
+-spec compile(ComponentName :: atom(), manifest()) -> ok.
 compile(ComponentName, Manifest = #{components := Components}) ->
   case maps:find(ComponentName, Components) of
     {ok, Component = #{type := Type}} when
         Type =:= library; Type =:= escript; Type =:= release ->
       Apps = maps:get(applications, Component, []),
-      lists:flatten([eon_app:compile(App, Manifest) || App <- Apps]);
+      lists:foreach(fun (App) -> eon_app:compile(App, Manifest) end, Apps);
     {ok, #{type := library}} ->
       throw({error, {unsupported_component_type, library}});
     {ok, #{type := Type}} ->

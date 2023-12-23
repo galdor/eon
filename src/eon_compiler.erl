@@ -2,18 +2,7 @@
 
 -export([compile_file/2]).
 
--export_type([diagnostic/0,
-              position/0, line/0, column/0]).
-
--type diagnostic() ::
-        {eon_fs:path(), error | warning, position(), term()}.
-
--type position() :: {line(), column()} | none.
--type line() :: pos_integer().
--type column() :: pos_integer().
-
--spec compile_file(file:filename_all(), eon_manifest:manifest()) ->
-        [diagnostic()].
+-spec compile_file(file:filename_all(), eon_manifest:manifest()) -> ok.
 compile_file(Filename, _Manifest) ->
   eon_log:debug(1, "compiling ~ts", [Filename]),
   OutputDirectory = output_directory(Filename),
@@ -21,20 +10,15 @@ compile_file(Filename, _Manifest) ->
   %% compile:file/2 only accepts strings
   FilenameString = eon_fs:path_string(Filename),
   OutputDirectoryString = eon_fs:path_string(OutputDirectory),
-  Opts = [return_errors,
-          return_warnings,
+  Opts = [report_errors,
+          report_warnings,
           {error_location, column},
           {outdir, OutputDirectoryString}],
   case compile:file(FilenameString, Opts) of
     {ok, _Mod} ->
-      [];
-    {ok, _Mod, Warnings} ->
-      diagnostics(Warnings, warning, []);
-    {error, Errors, Warnings} ->
-      ErrorDiagnostics = diagnostics(Errors, error, []),
-      WarningDiagnostics = diagnostics(Warnings, warning, []),
-      Diagnostics =  ErrorDiagnostics ++ WarningDiagnostics,
-      throw({error, {compilation, Diagnostics}})
+      ok;
+    error ->
+      throw({error, compilation})
   end.
 
 -spec output_directory(file:filename_all()) -> eon_fs:path().
@@ -52,13 +36,3 @@ output_directory(Filename) ->
     _ ->
       throw({error, {invalid_source_file_path, Filename}})
   end.
-
--spec diagnostics(compile:errors(), error | warning, [[diagnostic()]]) ->
-        [diagnostic()].
-diagnostics([], _Type, Acc) ->
-  lists:flatten(Acc);
-diagnostics([{Filename, Infos} | Errors], Type, Acc) ->
-  diagnostics(Errors, Type,
-              [[{eon_fs:path(Filename), Type, Location, Description}
-                || {Location, _Module, Description} <- Infos] |
-               Acc]).

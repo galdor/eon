@@ -150,8 +150,10 @@ resource_file_output_path(Filename) ->
       throw({error, {invalid_source_file_path, Filename}})
   end.
 
--spec compile(atom(), eon_manifest:manifest()) -> [eon_compiler:diagnostic()].
+-spec compile(atom(), eon_manifest:manifest()) -> ok.
 compile(App, Manifest) ->
   _Path = generate_resource_file(App, Manifest),
   Paths = source_files(App, Manifest),
-  lists:flatten([eon_compiler:compile_file(Path, Manifest) || Path <- Paths]).
+  lists:foreach(fun (Path) ->
+                    eon_compiler:compile_file(Path, Manifest)
+                end, Paths).

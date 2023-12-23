@@ -85,10 +85,7 @@ cmd_compile(#{options := Options, arguments := Args}) ->
 compile([], _Manifest, _Options) ->
   ok;
 compile([ComponentName | ComponentNames], Manifest, Options) ->
-  Diagnostics = eon_manifest:compile(ComponentName, Manifest),
-  lists:foreach(fun (Diagnostic) ->
-                    eon_log:info("warning: ~tp", [Diagnostic])
-                end, Diagnostics),
+  eon_manifest:compile(ComponentName, Manifest),
   eon_log:info("component compiled"),
   compile(ComponentNames, Manifest, Options).
 
