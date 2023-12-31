@@ -2,6 +2,7 @@
 
 -export([source_directory/2, source_files/2, beam_files/2,
          generate_resource_file/2,
+         path/2, src_path/2, ebin_path/2,
          resource_file_source_path/2, resource_file_path/2,
          compile/2]).
 
@@ -33,10 +34,10 @@ beam_files(App, Manifest) ->
 
 -spec generate_resource_file(atom(), eon_manifest:manifest()) -> eon_fs:path().
 generate_resource_file(App, Manifest) ->
-  {Path, Specification} = load_specification(App, Manifest),
-  eon_log:debug(1, "processing ~ts", [Path]),
+  {SourcePath, Specification} = load_specification(App, Manifest),
+  eon_log:debug(1, "processing ~ts", [SourcePath]),
   Specification2 = finalize_specification(Specification, Manifest),
-  OutputPath = resource_file_output_path(Path),
+  OutputPath = resource_file_path(App, Manifest),
   eon_fs:ensure_directory(filename:dirname(OutputPath)),
   Data = [io_lib:print(Specification2, 1, 80, -1), $.],
   case file:write_file(OutputPath, Data) of
@@ -102,6 +103,20 @@ finalize_specification_version(Specification = {application, App, Properties},
       throw({error, {missing_resource_file_property, vsn}})
   end.
 
+-spec path(atom(), eon_manifest:manifest()) -> eon_fs:path().
+path(App, Manifest) ->
+  ResourceFilePath = resource_file_source_path(App, Manifest),
+  SrcPath = filename:dirname(ResourceFilePath),
+  filename:dirname(SrcPath).
+
+-spec src_path(atom(), eon_manifest:manifest()) -> eon_fs:path().
+src_path(App, Manifest) ->
+  filename:join(path(App, Manifest), <<"src">>).
+
+-spec ebin_path(atom(), eon_manifest:manifest()) -> eon_fs:path().
+ebin_path(App, Manifest) ->
+  filename:join(path(App, Manifest), <<"ebin">>).
+
 -spec resource_file_source_path(atom(), eon_manifest:manifest()) ->
         eon_fs:path().
 resource_file_source_path(App, #{root := Root}) ->
@@ -129,26 +144,8 @@ resource_file_source_path(App, #{root := Root}) ->
 
 -spec resource_file_path(atom(), eon_manifest:manifest()) -> eon_fs:path().
 resource_file_path(App, Manifest) ->
-  Path = resource_file_source_path(App, Manifest),
-  resource_file_output_path(Path).
-
--spec resource_file_output_path(file:filename_all()) -> eon_fs:path().
-resource_file_output_path(Filename) ->
-  %% Application resource files are stored in <app>/ebin/<basename>.app if the
-  %% file is part of an application directory or ebin/<basename>.app if it is
-  %% a simplified project structure (no application, all source files in a
-  %% top-level src directory).
-  Path = eon_fs:path(Filename),
-  Basename = filename:basename(Path, ".src"),
-  case lists:reverse(filename:split(Path)) of
-    [_Basename, <<"src">>, AppName, <<"apps">> | Rest] ->
-      filename:join(lists:reverse(Rest) ++
-                      [<<"apps">>, AppName, <<"ebin">>, Basename]);
-    [_Basename, <<"src">> | Rest] ->
-      filename:join(lists:reverse(Rest) ++ [<<"ebin">>, Basename]);
-    _ ->
-      throw({error, {invalid_source_file_path, Filename}})
-  end.
+  Filename = <<(atom_to_binary(App))/binary, ".app">>,
+  filename:join(ebin_path(App, Manifest), Filename).
 
 -spec compile(atom(), eon_manifest:manifest()) -> ok.
 compile(App, Manifest) ->
