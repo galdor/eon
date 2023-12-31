@@ -94,7 +94,9 @@ compile(ComponentName, Manifest = #{components := Components}) ->
     {ok, Component = #{type := Type}} when
         Type =:= library; Type =:= escript; Type =:= release ->
       Apps = maps:get(applications, Component, []),
-      lists:foreach(fun (App) -> eon_app:compile(App, Manifest) end, Apps);
+      lists:foreach(fun (App) ->
+                        eon_app:compile(App, Component, Manifest)
+                    end, Apps);
     {ok, #{type := library}} ->
       throw({error, {unsupported_component_type, library}});
     {ok, #{type := Type}} ->

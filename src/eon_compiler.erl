@@ -1,24 +1,33 @@
 -module(eon_compiler).
 
--export([compile_file/2]).
+-export([compile_file/3]).
 
--spec compile_file(file:filename_all(), eon_manifest:manifest()) -> ok.
-compile_file(Filename, _Manifest) ->
+-spec compile_file(file:filename_all(), eon_manifest:component(),
+                   eon_manifest:manifest()) -> ok.
+compile_file(Filename, Component, Manifest) ->
   eon_log:debug(1, "compiling ~ts", [Filename]),
   OutputDirectory = output_directory(Filename),
   eon_fs:ensure_directory(OutputDirectory),
   %% compile:file/2 only accepts strings
   FilenameString = eon_fs:path_string(Filename),
   OutputDirectoryString = eon_fs:path_string(OutputDirectory),
-  Opts = [report_errors,
-          report_warnings,
-          {error_location, column},
-          {outdir, OutputDirectoryString}],
-  case compile:file(FilenameString, Opts) of
-    {ok, _Mod} ->
-      ok;
-    error ->
-      throw({error, compilation})
+  Apps = maps:get(applications, Component, []),
+  EbinPaths = [eon_app:ebin_path(App, Manifest) || App <- Apps],
+  CodePath = code:get_path(),
+  try
+    code:add_paths([eon_fs:path_string(Path) || Path <- EbinPaths]),
+    Opts = [report_errors,
+            report_warnings,
+            {error_location, column},
+            {outdir, OutputDirectoryString}],
+    case compile:file(FilenameString, Opts) of
+      {ok, _Mod} ->
+        ok;
+      error ->
+        throw({error, compilation})
+    end
+  after
+    code:set_path(CodePath)
   end.
 
 -spec output_directory(file:filename_all()) -> eon_fs:path().

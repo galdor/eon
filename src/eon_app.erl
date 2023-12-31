@@ -4,7 +4,7 @@
          generate_resource_file/2,
          path/2, src_path/2, ebin_path/2,
          resource_file_source_path/2, resource_file_path/2,
-         compile/2]).
+         compile/3]).
 
 %% TODO
 -type specification() ::
@@ -147,10 +147,10 @@ resource_file_path(App, Manifest) ->
   Filename = <<(atom_to_binary(App))/binary, ".app">>,
   filename:join(ebin_path(App, Manifest), Filename).
 
--spec compile(atom(), eon_manifest:manifest()) -> ok.
-compile(App, Manifest) ->
-  _Path = generate_resource_file(App, Manifest),
+-spec compile(atom(), eon_manifest:component(), eon_manifest:manifest()) -> ok.
+compile(App, Component, Manifest) ->
+  generate_resource_file(App, Manifest),
   Paths = source_files(App, Manifest),
   lists:foreach(fun (Path) ->
-                    eon_compiler:compile_file(Path, Manifest)
+                    eon_compiler:compile_file(Path, Component, Manifest)
                 end, Paths).
