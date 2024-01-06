@@ -147,10 +147,10 @@ resource_file_path(App, Manifest) ->
   Filename = <<(atom_to_binary(App))/binary, ".app">>,
   filename:join(ebin_path(App, Manifest), Filename).
 
--spec compile(atom(), eon_manifest:component(), eon_manifest:manifest()) -> ok.
-compile(App, Component, Manifest) ->
+-spec compile(atom(), ComponentName :: atom(), eon_manifest:manifest()) -> ok.
+compile(App, ComponentName, Manifest) ->
   generate_resource_file(App, Manifest),
   Paths = source_files(App, Manifest),
   lists:foreach(fun (Path) ->
-                    eon_compiler:compile_file(Path, Component, Manifest)
+                    eon_compiler:compile_file(Path, ComponentName, Manifest)
                 end, Paths).

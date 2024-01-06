@@ -2,20 +2,19 @@
 
 -export([compile_file/3]).
 
--spec compile_file(file:filename_all(), eon_manifest:component(),
+-spec compile_file(file:filename_all(), ComponentName :: atom(),
                    eon_manifest:manifest()) -> ok.
-compile_file(Filename, Component, Manifest) ->
+compile_file(Filename, ComponentName, Manifest) ->
   eon_log:debug(1, "compiling ~ts", [Filename]),
   OutputDirectory = output_directory(Filename),
   eon_fs:ensure_directory(OutputDirectory),
   %% compile:file/2 only accepts strings
   FilenameString = eon_fs:path_string(Filename),
   OutputDirectoryString = eon_fs:path_string(OutputDirectory),
-  Apps = maps:get(applications, Component, []),
-  EbinPaths = [eon_app:ebin_path(App, Manifest) || App <- Apps],
+  AppCodePaths = eon_manifest:code_paths(ComponentName, Manifest),
   CodePath = code:get_path(),
   try
-    code:add_paths([eon_fs:path_string(Path) || Path <- EbinPaths]),
+    code:add_paths([eon_fs:path_string(Path) || Path <- AppCodePaths]),
     Opts = [report_errors,
             report_warnings,
             {error_location, column},

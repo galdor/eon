@@ -2,8 +2,14 @@
 
 -export([main/1]).
 
+-type command() ::
+        build
+      | compile
+      | help
+      | shell.
+
 -type command_line_data() ::
-        #{command := atom(),
+        #{command := command(),
           arguments := [binary()],
           options := command_line_options()}.
 
@@ -18,10 +24,16 @@ main(Args) ->
       usage();
     #{options := #{help := true}} ->
       usage();
-    CommandLineData = #{command := compile} ->
-      cmd_compile(CommandLineData);
-    CommandLineData = #{command := build} ->
-      cmd_build(CommandLineData)
+    CommandLineData = #{command := Command, options := Options} ->
+      Manifest = load_manifest(Options),
+      case Command of
+        compile ->
+          cmd_compile(CommandLineData, Manifest);
+        build ->
+          cmd_build(CommandLineData, Manifest);
+        shell ->
+          cmd_shell(CommandLineData, Manifest)
+      end
   end,
   eon_log:stop().
 
@@ -40,6 +52,8 @@ usage() ->
               "build                   build all components~n"
               "build <component>...    build one or more components~n"
               "compile <component>...  compile one or more components~n"
+              "shell <component>...    start a shell running one or more "
+              "components~n"
               "help                    print help and exit~n">>,
             [ProgramName]).
 
@@ -49,45 +63,75 @@ load_manifest(Options) ->
   Path = filename:join(Root, "eon.erl"),
   eon_manifest:load(Path).
 
--spec cmd_build(command_line_data()) -> ok.
-cmd_build(#{options := Options, arguments := Args}) ->
-  Manifest = load_manifest(Options),
-  Components = case Args of
-                 [] ->    eon_manifest:component_names(Manifest);
-                 Names -> [erlang:binary_to_atom(Name) || Name <- Names]
-               end,
-  compile(Components, Manifest, #{}),
-  build(Components, Manifest, Options).
+-spec cmd_build(command_line_data(), eon_manifest:manifest()) -> ok.
+cmd_build(CommandLineData, Manifest) ->
+  Build =
+    fun (Component) ->
+        eon_log:info("building component ~ts", [Component]),
+        eon_manifest:compile(Component, Manifest),
+        ArtifactPath = eon_manifest:build(Component, Manifest),
+        eon_log:info("component built at ~ts", [ArtifactPath])
+    end,
+  apply_component_command(Build, CommandLineData, Manifest).
 
--spec build(ComponentNames, eon_manifest:manifest(),
-            command_line_options()) -> ok when
-    ComponentNames :: [atom()].
-build([], _Manifest, _Options) ->
+-spec cmd_compile(command_line_data(), eon_manifest:manifest()) -> ok.
+cmd_compile(CommandLineData, Manifest) ->
+  Compile =
+    fun (Component) ->
+        eon_log:info("compiling component ~ts", [Component]),
+        eon_manifest:compile(Component, Manifest),
+        eon_log:info("component compiled")
+    end,
+  apply_component_command(Compile, CommandLineData, Manifest).
+
+-spec cmd_shell(command_line_data(), eon_manifest:manifest()) -> no_return().
+cmd_shell(CommandLineData, Manifest) ->
+  cmd_compile(CommandLineData, Manifest),
+  Components = command_line_components(CommandLineData, Manifest),
+  CodePaths = eon_manifest:code_paths(Components, Manifest),
+  code:add_paths([eon_fs:path_string(Path) || Path <- CodePaths]),
+  Apps = eon_manifest:applications(Components, Manifest),
+  start_shell_applications(Apps),
+  eon_log:info("starting shell"),
+  case shell:start_interactive() of
+    ok ->
+      run_shell();
+    {error, Reason} ->
+      throw({error, {start_shell, Reason}})
+  end.
+
+-spec start_shell_applications([atom()]) -> ok.
+start_shell_applications([]) ->
   ok;
-build([ComponentName | ComponentNames], Manifest, Options) ->
-  eon_log:info("building component ~ts", [ComponentName]),
-  ArtifactPath = eon_manifest:build(ComponentName, Manifest),
-  eon_log:info("component built at ~ts", [ArtifactPath]),
-  build(ComponentNames, Manifest, Options).
+start_shell_applications([App | Apps]) ->
+  eon_log:info("starting application ~p", [App]),
+  case application:ensure_all_started(App, temporary) of
+    {ok, _} ->
+      start_shell_applications(Apps);
+    {error, Reason} ->
+      throw({error, {start_application, App, Reason}})
+  end.
 
--spec cmd_compile(command_line_data()) -> ok.
-cmd_compile(#{options := Options, arguments := Args}) ->
-  Manifest = load_manifest(Options),
-  Components = case Args of
-                 [] ->    eon_manifest:component_names(Manifest);
-                 Names -> [erlang:binary_to_atom(Name) || Name <- Names]
-               end,
-  compile(Components, Manifest, Options).
+-spec run_shell() -> no_return().
+run_shell() ->
+  receive
+    Msg ->
+      eon_log:debug(1, "unhandled message ~tp", [Msg]),
+      run_shell()
+  end.
 
--spec compile(ComponentNames, eon_manifest:manifest(),
-              command_line_options()) -> ok when
-    ComponentNames :: [atom()].
-compile([], _Manifest, _Options) ->
-  ok;
-compile([ComponentName | ComponentNames], Manifest, Options) ->
-  eon_manifest:compile(ComponentName, Manifest),
-  eon_log:info("component compiled"),
-  compile(ComponentNames, Manifest, Options).
+-spec command_line_components(command_line_data(), eon_manifest:manifest()) ->
+        [atom()].
+command_line_components(#{arguments := []}, Manifest) ->
+  eon_manifest:component_names(Manifest);
+command_line_components(#{arguments := Arguments}, _Manifest) ->
+  [erlang:binary_to_atom(Name) || Name <- Arguments].
+
+-spec apply_component_command(fun((atom()) -> ok), command_line_data(),
+                              eon_manifest:manifest()) -> ok.
+apply_component_command(Fun, CommandLineData, Manifest) ->
+  Components = command_line_components(CommandLineData, Manifest),
+  lists:foreach(Fun, Components).
 
 -spec parse_command_line([string()]) -> command_line_data().
 parse_command_line(Args) ->
@@ -135,6 +179,7 @@ parse_command_line([Name | RawArgs], options, Acc) ->
       <<"build">> -> build;
       <<"compile">> -> compile;
       <<"help">> -> help;
+      <<"shell">> -> shell;
       _ -> error
     end,
   parse_command_line(RawArgs, options, Acc#{command => Command}).
