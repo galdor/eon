@@ -1,6 +1,6 @@
 -module(eon_manifest).
 
--export([component_names/1, load/1, build/2, compile/2,
+-export([component_names/1, load/1, build/2, compile/2, test/2,
          applications/2, code_paths/2]).
 
 -export_type([manifest/0, project/0,
@@ -98,8 +98,22 @@ compile(ComponentName, Manifest = #{components := Components}) ->
       lists:foreach(fun (App) ->
                         eon_app:compile(App, ComponentName, Manifest)
                     end, Apps);
-    {ok, #{type := library}} ->
-      throw({error, {unsupported_component_type, library}});
+    {ok, #{type := Type}} ->
+      throw({error, {unknown_component_type, Type}});
+    error ->
+      throw({error, {unknown_component, ComponentName}})
+  end.
+
+-spec test(ComponentName :: atom(), manifest()) -> ok.
+test(ComponentName, Manifest = #{components := Components}) ->
+  Apps = applications(ComponentName, Manifest),
+  case maps:find(ComponentName, Components) of
+    {ok, Component = #{type := Type}} when
+        Type =:= library; Type =:= escript; Type =:= release ->
+      Apps = maps:get(applications, Component, []),
+      lists:foreach(fun (App) ->
+                        eon_app:test(App, ComponentName, Manifest)
+                    end, Apps);
     {ok, #{type := Type}} ->
       throw({error, {unknown_component_type, Type}});
     error ->

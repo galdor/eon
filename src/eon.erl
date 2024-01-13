@@ -6,7 +6,8 @@
         build
       | compile
       | help
-      | shell.
+      | shell
+      | test.
 
 -type command_line_data() ::
         #{command := command(),
@@ -32,7 +33,9 @@ main(Args) ->
         build ->
           cmd_build(CommandLineData, Manifest);
         shell ->
-          cmd_shell(CommandLineData, Manifest)
+          cmd_shell(CommandLineData, Manifest);
+        test ->
+          cmd_test(CommandLineData, Manifest)
       end
   end,
   eon_log:stop().
@@ -54,6 +57,7 @@ usage() ->
               "compile <component>...  compile one or more components~n"
               "shell <component>...    start a shell running one or more "
               "components~n"
+              "test <component>...     test one or more components~n"
               "help                    print help and exit~n">>,
             [ProgramName]).
 
@@ -79,8 +83,7 @@ cmd_compile(CommandLineData, Manifest) ->
   Compile =
     fun (Component) ->
         eon_log:info("compiling component ~ts", [Component]),
-        eon_manifest:compile(Component, Manifest),
-        eon_log:info("component compiled")
+        eon_manifest:compile(Component, Manifest)
     end,
   apply_component_command(Compile, CommandLineData, Manifest).
 
@@ -99,6 +102,16 @@ cmd_shell(CommandLineData, Manifest) ->
     {error, Reason} ->
       throw({error, {start_shell, Reason}})
   end.
+
+-spec cmd_test(command_line_data(), eon_manifest:manifest()) -> ok.
+cmd_test(CommandLineData, Manifest) ->
+  Compile =
+    fun (Component) ->
+        eon_log:info("testing component ~ts", [Component]),
+        eon_manifest:compile(Component, Manifest),
+        eon_manifest:test(Component, Manifest)
+    end,
+  apply_component_command(Compile, CommandLineData, Manifest).
 
 -spec start_shell_applications([atom()]) -> ok.
 start_shell_applications([]) ->
@@ -176,10 +189,12 @@ parse_command_line([Argument | RawArgs], arguments,
 parse_command_line([Name | RawArgs], options, Acc) ->
   Command =
     case Name of
-      <<"build">> -> build;
+      <<"build">> ->   build;
       <<"compile">> -> compile;
-      <<"help">> -> help;
-      <<"shell">> -> shell;
-      _ -> error
+      <<"help">> ->    help;
+      <<"shell">> ->   shell;
+      <<"test">> ->    test;
+      _ ->
+        throw({error, {unhandled_command, Name}})
     end,
   parse_command_line(RawArgs, options, Acc#{command => Command}).

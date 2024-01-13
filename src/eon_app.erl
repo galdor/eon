@@ -1,10 +1,10 @@
 -module(eon_app).
 
--export([source_files/2, beam_files/2,
+-export([source_files/2, test_files/2, beam_files/2,
          generate_resource_file/2,
          path/2, src_path/2, test_path/2, ebin_path/2,
          resource_file_source_path/2, resource_file_path/2,
-         compile/3]).
+         compile/3, test/3]).
 
 %% TODO
 -type specification() ::
@@ -13,14 +13,16 @@
 -spec source_files(atom(), eon_manifest:manifest()) -> [eon_fs:path()].
 source_files(App, Manifest) ->
   Filter = eon_fs:find_files_extension_filter(<<".erl">>),
-  SrcFiles = eon_fs:find_files(src_path(App, Manifest), #{filter => Filter}),
+  eon_fs:find_files(src_path(App, Manifest), #{filter => Filter}).
+
+-spec test_files(atom(), eon_manifest:manifest()) -> [eon_fs:path()].
+test_files(App, Manifest) ->
+  Filter = eon_fs:find_files_extension_filter(<<".erl">>),
   TestPath = test_path(App, Manifest),
-  TestFiles =
-    case filelib:is_dir(TestPath) of
-      true ->  eon_fs:find_files(TestPath, #{filter => Filter});
-      false -> []
-    end,
-  lists:append([SrcFiles, TestFiles]).
+  case filelib:is_dir(TestPath) of
+    true ->  eon_fs:find_files(TestPath, #{filter => Filter});
+    false -> []
+  end.
 
 -spec beam_files(atom(), eon_manifest:manifest()) -> [eon_fs:path()].
 beam_files(App, Manifest) ->
@@ -149,7 +151,22 @@ resource_file_path(App, Manifest) ->
 -spec compile(atom(), ComponentName :: atom(), eon_manifest:manifest()) -> ok.
 compile(App, ComponentName, Manifest) ->
   generate_resource_file(App, Manifest),
-  Paths = source_files(App, Manifest),
+  SourcePaths = source_files(App, Manifest),
+  TestPaths = test_files(App, Manifest),
   lists:foreach(fun (Path) ->
                     eon_compiler:compile_file(Path, ComponentName, Manifest)
-                end, Paths).
+                end, SourcePaths ++ TestPaths).
+
+-spec test(atom(), ComponentName :: atom(), eon_manifest:manifest()) -> ok.
+test(App, ComponentName, Manifest) ->
+  CodePath = code:get_path(),
+  AppCodePaths = eon_manifest:code_paths(ComponentName, Manifest),
+  try
+    code:add_paths([eon_fs:path_string(Path) || Path <- AppCodePaths]),
+    lists:foreach(fun (Path) ->
+                      Module = binary_to_atom(filename:basename(Path, ".erl")),
+                      eon_eunit:test(Module, Manifest)
+                  end, test_files(App, Manifest))
+  after
+    code:set_path(CodePath)
+  end.
