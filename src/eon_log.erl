@@ -1,24 +1,27 @@
 -module(eon_log).
 
 -export([start/1, stop/0,
-         log/3, debug/2, debug/3, info/1, info/2, error/1, error/2,
-         fatal/1, fatal/2,
-         init/1]).
+         log/3, debug/1, debug/2, info/1, info/2, error/1, error/2,
+         init/2]).
 
 -export_type([level/0, cfg/0]).
 
 -type level() ::
-        {debug, pos_integer()}
+        debug
       | info
-      | error
-      | fatal.
+      | error.
 
 -type cfg() ::
-        #{debug_level => non_neg_integer()}.
+        #{level => level()}.
+
+-type state() ::
+        #{level_rank := pos_integer()}.
 
 -spec start(cfg()) -> ok.
 start(Cfg) ->
-  Pid = erlang:spawn_link(?MODULE, init, [Cfg]),
+  Level = maps:get(level, Cfg, info),
+  State = #{level_rank => level_rank(Level)},
+  Pid = erlang:spawn_link(?MODULE, init, [Cfg, State]),
   erlang:register(?MODULE, Pid),
   ok.
 
@@ -40,13 +43,13 @@ log(Level, Format, Args) ->
   ?MODULE ! {log, Level, Format, Args},
   ok.
 
--spec debug(pos_integer(), io:format()) -> ok.
-debug(DebugLevel, Format) ->
-  debug(DebugLevel, Format, []).
+-spec debug(io:format()) -> ok.
+debug(Format) ->
+  debug(Format, []).
 
--spec debug(pos_integer(), io:format(), [term()]) -> ok.
-debug(DebugLevel, Format, Args) ->
-  log({debug, DebugLevel}, Format, Args).
+-spec debug(io:format(), [term()]) -> ok.
+debug(Format, Args) ->
+  log(debug, Format, Args).
 
 -spec info(io:format()) -> ok.
 info(Format) ->
@@ -64,47 +67,40 @@ error(Format) ->
 error(Format, Args) ->
   log(error, Format, Args).
 
--spec fatal(io:format()) -> ok.
-fatal(Format) ->
-  ?MODULE:fatal(Format, []).
+-spec init(cfg(), state()) -> no_return().
+init(Cfg, State) ->
+  main(Cfg, State).
 
--spec fatal(io:format(), [term()]) -> ok.
-fatal(Format, Args) ->
-  log(fatal, Format, Args).
-
--spec init(cfg()) -> no_return().
-init(Cfg) ->
-  main(Cfg).
-
--spec main(cfg()) -> no_return().
-main(Cfg) ->
+-spec main(cfg(), state()) -> no_return().
+main(Cfg, State = #{level_rank := LevelRank}) ->
   receive
     {log, Level, Message, Args} ->
-      do_log(Level, Message, Args, Cfg),
-      main(Cfg);
+      case level_rank(Level) of
+        MessageLevelRank when MessageLevelRank >= LevelRank ->
+          do_log(Level, Message, Args, Cfg);
+        _ ->
+          ok
+      end,
+      main(Cfg, State);
     stop ->
       exit(normal);
     Msg ->
       do_log(error, "unhandled message ~tp", [Msg], Cfg),
-      main(Cfg)
+      main(Cfg, State)
   end.
 
 -spec do_log(level(), io:format(), [term()], cfg()) -> ok.
-do_log({debug, DebugLevel}, Format, Args, Cfg) ->
-  case maps:get(debug_level, Cfg, 0) of
-    Level when Level >= DebugLevel ->
-      io:format(standard_error, Format, Args),
-      io:nl(standard_error);
-    _ ->
-      ok
-  end;
+do_log(debug, Format, Args, _Cfg) ->
+  Format2 = eon_string:binary([Format, "~n"]),
+  io:format(standard_error, Format2, Args);
 do_log(info, Format, Args, _Cfg) ->
   Format2 = eon_string:binary([Format, "~n"]),
   io:format(standard_error, Format2, Args);
 do_log(error, Format, Args, _Cfg) ->
   Format2 = eon_string:binary(["error: ", Format, "~n"]),
-  io:format(standard_error, Format2, Args);
-do_log(fatal, Format, Args, _Cfg) ->
-  Format2 = eon_string:binary(["fatal error: ", Format, "~n"]),
-  io:format(standard_error, Format2, Args),
-  halt(1).
+  io:format(standard_error, Format2, Args).
+
+-spec level_rank(level()) -> pos_integer().
+level_rank(debug) -> 1;
+level_rank(info) -> 2;
+level_rank(error) -> 3.

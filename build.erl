@@ -3,7 +3,7 @@
 
 main([]) ->
   process_flag(trap_exit, true),
-  eon_log:start(#{debug_level => 1}),
+  eon_log:start(#{level => debug}),
   Manifest = eon_manifest:load("eon.erl"),
   eon_manifest:compile(eon, Manifest),
   ArtifactPath = eon_manifest:build(eon, Manifest),

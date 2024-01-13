@@ -64,7 +64,7 @@ component_names(#{components := Components}) ->
 
 -spec load(file:filename_all()) -> manifest().
 load(Path) ->
-  eon_log:debug(1, "loading manifest from ~ts", [Path]),
+  eon_log:debug("loading manifest from ~ts", [Path]),
   case file:consult(Path) of
     {ok, []} ->
       throw({error, {empty_manifest, Path}});

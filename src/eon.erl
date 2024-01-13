@@ -19,13 +19,17 @@
 
 main(Args) ->
   process_flag(trap_exit, true),
-  eon_log:start(#{debug_level => 1}),
   case parse_command_line(Args) of
     #{command := help} ->
       usage();
     #{options := #{help := true}} ->
       usage();
     CommandLineData = #{command := Command, options := Options} ->
+      LogLevel = case maps:get(verbose, Options, false) of
+                   true -> info;
+                   false -> error
+                 end,
+      eon_log:start(#{level => LogLevel}),
       Manifest = load_manifest(Options),
       case Command of
         compile ->
@@ -36,9 +40,9 @@ main(Args) ->
           cmd_shell(CommandLineData, Manifest);
         test ->
           cmd_test(CommandLineData, Manifest)
-      end
-  end,
-  eon_log:stop().
+      end,
+      eon_log:stop()
+  end.
 
 usage() ->
   ProgramName = escript:script_name(),
@@ -49,6 +53,7 @@ usage() ->
               "-C <path>               set the root directory of the project"
               " (default: .)~n"
               "-h                      print help and exit~n"
+              "-v                      print informational messages~n"
               "~n"
               "COMMANDS~n"
               "~n"
@@ -129,7 +134,8 @@ start_shell_applications([App | Apps]) ->
 run_shell() ->
   receive
     Msg ->
-      eon_log:debug(1, "unhandled message ~tp", [Msg]),
+      %% Are there messages we should process?
+      eon_log:error("unhandled message ~tp", [Msg]),
       run_shell()
   end.
 
@@ -174,6 +180,8 @@ parse_command_line([<<$-, Option>> | RawArgs], options,
         {Options#{root => Path}, RawArgs2};
       {$h, _} ->
         {Options#{help => true}, RawArgs};
+      {$v, _} ->
+        {Options#{verbose => true}, RawArgs};
       _ ->
         throw({error, {unknown_option, [$-, Option]}})
     end,

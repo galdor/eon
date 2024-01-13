@@ -32,7 +32,7 @@ beam_files(App, Manifest) ->
 -spec generate_resource_file(atom(), eon_manifest:manifest()) -> eon_fs:path().
 generate_resource_file(App, Manifest) ->
   {SourcePath, Specification} = load_specification(App, Manifest),
-  eon_log:debug(1, "processing ~ts", [SourcePath]),
+  eon_log:info("processing ~ts", [SourcePath]),
   Specification2 = finalize_specification(Specification, Manifest),
   OutputPath = resource_file_path(App, Manifest),
   eon_fs:ensure_directory(filename:dirname(OutputPath)),

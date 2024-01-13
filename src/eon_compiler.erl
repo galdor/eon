@@ -5,7 +5,7 @@
 -spec compile_file(file:filename_all(), ComponentName :: atom(),
                    eon_manifest:manifest()) -> ok.
 compile_file(Filename, ComponentName, Manifest) ->
-  eon_log:debug(1, "compiling ~ts", [Filename]),
+  eon_log:info("compiling ~ts", [Filename]),
   OutputDirectory = output_directory(Filename),
   eon_fs:ensure_directory(OutputDirectory),
   %% compile:file/2 only accepts strings
