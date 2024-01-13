@@ -1,8 +1,8 @@
 -module(eon_app).
 
--export([source_directory/2, source_files/2, beam_files/2,
+-export([source_files/2, beam_files/2,
          generate_resource_file/2,
-         path/2, src_path/2, ebin_path/2,
+         path/2, src_path/2, test_path/2, ebin_path/2,
          resource_file_source_path/2, resource_file_path/2,
          compile/3]).
 
@@ -10,27 +10,22 @@
 -type specification() ::
         term().
 
--spec source_directory(atom(), eon_manifest:manifest()) -> binary().
-source_directory(App, Manifest) ->
-  Path = resource_file_source_path(App, Manifest),
-  eon_fs:path(filename:dirname(Path)).
-
 -spec source_files(atom(), eon_manifest:manifest()) -> [eon_fs:path()].
 source_files(App, Manifest) ->
-  DirPath = source_directory(App, Manifest),
-  Filter = fun (Path) ->
-               filename:extension(Path) =:= <<".erl">>
-           end,
-  eon_fs:find_files(DirPath, #{filter => Filter}).
+  Filter = eon_fs:find_files_extension_filter(<<".erl">>),
+  SrcFiles = eon_fs:find_files(src_path(App, Manifest), #{filter => Filter}),
+  TestPath = test_path(App, Manifest),
+  TestFiles =
+    case filelib:is_dir(TestPath) of
+      true ->  eon_fs:find_files(TestPath, #{filter => Filter});
+      false -> []
+    end,
+  lists:append([SrcFiles, TestFiles]).
 
 -spec beam_files(atom(), eon_manifest:manifest()) -> [eon_fs:path()].
 beam_files(App, Manifest) ->
-  SourceDirPath = source_directory(App, Manifest),
-  BeamDirPath = filename:join(filename:dirname(SourceDirPath), "ebin"),
-  Filter = fun (Path) ->
-               filename:extension(Path) =:= <<".beam">>
-           end,
-  eon_fs:find_files(BeamDirPath, #{filter => Filter}).
+  Filter = eon_fs:find_files_extension_filter(<<".beam">>),
+  eon_fs:find_files(ebin_path(App, Manifest), #{filter => Filter}).
 
 -spec generate_resource_file(atom(), eon_manifest:manifest()) -> eon_fs:path().
 generate_resource_file(App, Manifest) ->
@@ -112,6 +107,10 @@ path(App, Manifest) ->
 -spec src_path(atom(), eon_manifest:manifest()) -> eon_fs:path().
 src_path(App, Manifest) ->
   filename:join(path(App, Manifest), <<"src">>).
+
+-spec test_path(atom(), eon_manifest:manifest()) -> eon_fs:path().
+test_path(App, Manifest) ->
+  filename:join(path(App, Manifest), <<"test">>).
 
 -spec ebin_path(atom(), eon_manifest:manifest()) -> eon_fs:path().
 ebin_path(App, Manifest) ->

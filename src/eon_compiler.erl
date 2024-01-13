@@ -37,9 +37,11 @@ output_directory(Filename) ->
   %% top-level src directory).
   Path = eon_fs:path(Filename),
   case lists:reverse(filename:split(Path)) of
-    [_Basename, <<"src">>, AppName, <<"apps">> | Rest] ->
+    [_Basename, Dir, AppName, <<"apps">> | Rest] when
+        Dir =:= <<"src">>; Dir =:= <<"test">> ->
       filename:join(lists:reverse(Rest) ++ [<<"apps">>, AppName, <<"ebin">>]);
-    [_Basename, <<"src">> | Rest] ->
+    [_Basename, Dir | Rest]  when
+        Dir =:= <<"src">>; Dir =:= <<"test">> ->
       filename:join(lists:reverse(Rest) ++ [<<"ebin">>]);
     _ ->
       throw({error, {invalid_source_file_path, Filename}})

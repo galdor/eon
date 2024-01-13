@@ -2,7 +2,7 @@
 
 -export([file_exists/1,
          add_file_permissions/2,
-         find_files/1, find_files/2,
+         find_files/1, find_files/2, find_files_extension_filter/1,
          ensure_directory/1,
          path/1, path_string/1, simplify_path/1]).
 
@@ -73,6 +73,12 @@ find_files(Path, Opts, Acc) ->
       end;
     {error, Reason} ->
       throw({error, {file_info, Path, Reason}})
+  end.
+
+-spec find_files_extension_filter(binary()) -> find_files_filter().
+find_files_extension_filter(Ext) ->
+  fun (Path) ->
+      filename:extension(Path) =:= Ext
   end.
 
 -spec ensure_directory(file:filename_all()) -> ok.
