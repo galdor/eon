@@ -2,6 +2,8 @@
 
 -export([main/1]).
 
+-export_type([test_cfg/0]).
+
 -type command() ::
         build
       | compile
@@ -16,6 +18,10 @@
 
 -type command_line_options() ::
         #{atom() := boolean() | binary()}.
+
+-type test_cfg() ::
+        #{component := atom(),
+          verbose => boolean()}.
 
 main(Args) ->
   process_flag(trap_exit, true),
@@ -109,14 +115,19 @@ cmd_shell(CommandLineData, Manifest) ->
   end.
 
 -spec cmd_test(command_line_data(), eon_manifest:manifest()) -> ok.
-cmd_test(CommandLineData, Manifest) ->
+cmd_test(CommandLineData = #{options := Options}, Manifest) ->
   Compile =
     fun (Component) ->
         eon_log:info("testing component ~ts", [Component]),
         eon_manifest:compile(Component, Manifest),
-        eon_manifest:test(Component, Manifest)
+        TestCfg = #{component => Component,
+                    verbose => maps:get(verbose, Options, false)},
+        eon_manifest:test(Component, Manifest, TestCfg)
     end,
-  apply_component_command(Compile, CommandLineData, Manifest).
+  case apply_component_command(Compile, CommandLineData, Manifest) of
+    ok -> ok;
+    error -> halt(1)
+  end.
 
 -spec start_shell_applications([atom()]) -> ok.
 start_shell_applications([]) ->
@@ -146,11 +157,16 @@ command_line_components(#{arguments := []}, Manifest) ->
 command_line_components(#{arguments := Arguments}, _Manifest) ->
   [erlang:binary_to_atom(Name) || Name <- Arguments].
 
--spec apply_component_command(fun((atom()) -> ok), command_line_data(),
-                              eon_manifest:manifest()) -> ok.
+-spec apply_component_command(fun((atom()) -> ok | error), command_line_data(),
+                              eon_manifest:manifest()) -> ok | error.
 apply_component_command(Fun, CommandLineData, Manifest) ->
   Components = command_line_components(CommandLineData, Manifest),
-  lists:foreach(Fun, Components).
+  lists:foldl(fun (Component, Result) ->
+                  case Fun(Component) of
+                    ok -> Result;
+                    error -> error
+                  end
+              end, ok, Components).
 
 -spec parse_command_line([string()]) -> command_line_data().
 parse_command_line(Args) ->
@@ -197,11 +213,11 @@ parse_command_line([Argument | RawArgs], arguments,
 parse_command_line([Name | RawArgs], options, Acc) ->
   Command =
     case Name of
-      <<"build">> ->   build;
+      <<"build">> -> build;
       <<"compile">> -> compile;
-      <<"help">> ->    help;
-      <<"shell">> ->   shell;
-      <<"test">> ->    test;
+      <<"help">> -> help;
+      <<"shell">> -> shell;
+      <<"test">> -> test;
       _ ->
         throw({error, {unhandled_command, Name}})
     end,

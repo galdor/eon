@@ -4,7 +4,7 @@
          generate_resource_file/2,
          path/2, src_path/2, test_path/2, ebin_path/2,
          resource_file_source_path/2, resource_file_path/2,
-         compile/3, test/3]).
+         compile/3, test/4]).
 
 %% TODO
 -type specification() ::
@@ -157,16 +157,17 @@ compile(App, ComponentName, Manifest) ->
                     eon_compiler:compile_file(Path, ComponentName, Manifest)
                 end, SourcePaths ++ TestPaths).
 
--spec test(atom(), ComponentName :: atom(), eon_manifest:manifest()) -> ok.
-test(App, ComponentName, Manifest) ->
+-spec test([atom()], ComponentName :: atom(), eon_manifest:manifest(),
+           eon:test_cfg()) -> ok | error.
+test(Apps, ComponentName, Manifest, TestCfg) ->
   CodePath = code:get_path(),
   AppCodePaths = eon_manifest:code_paths(ComponentName, Manifest),
   try
     code:add_paths([eon_fs:path_string(Path) || Path <- AppCodePaths]),
-    lists:foreach(fun (Path) ->
-                      Module = binary_to_atom(filename:basename(Path, ".erl")),
-                      eon_eunit:test(Module, Manifest)
-                  end, test_files(App, Manifest))
+    ModulePaths = lists:flatten([test_files(App, Manifest) || App <- Apps]),
+    Modules = [binary_to_atom(filename:basename(Path, ".erl"))
+               || Path <- ModulePaths],
+    eon_eunit:test(Modules, Manifest, TestCfg)
   after
     code:set_path(CodePath)
   end.
