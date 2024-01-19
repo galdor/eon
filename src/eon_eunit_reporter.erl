@@ -78,11 +78,11 @@ terminate({ok, Data}, _State = #{cfg := #{component := Component},
   Total = Passed + Failed + Skipped + Cancelled,
   case {Passed, Total} of
     {_, 0} ->
-      io:format("~ts: no test found~n", [Component]);
+      io:format("~n~ts: no test found~n", [Component]);
     {Total, Total} ->
-      io:format("~ts: ~b/~b tests passed~n", [Component, Passed, Total]);
+      io:format("~n~ts: ~b/~b tests passed~n", [Component, Passed, Total]);
     _ ->
-      io:format("~ts: ~b/~b tests passed"
+      io:format("~n~ts: ~b/~b tests passed"
                 " (~b failed, ~b skipped, ~b cancelled)~n",
                 [Component, Passed, Total, Failed, Skipped, Cancelled])
   end;
@@ -147,13 +147,13 @@ format_test_failures(Results) ->
 
 -spec format_test_failure(test_result()) -> ok.
 format_test_failure(Result = #{status := {error, Error}}) ->
-  io:format("~n~ts~n", [format_test_result_source(Result)]),
-  case maps:find(description, Result) of
-    {ok, Description} -> io:format("  description: ~ts~n", [Description]);
-    error -> ok
-  end,
-  %% TODO format error
-  io:format("  ~tp~n", [Error]),
+  Description =
+    case maps:find(description, Result) of
+      {ok, D} -> io_lib:format(" ~ts", [D]);
+      error -> ""
+    end,
+  io:format("~n~ts~ts~n", [format_test_result_source(Result), Description]),
+  format_test_error(Error),
   case maps:find(output, Result) of
     {ok, Output} ->
       io:format("  output:~n"),
@@ -164,6 +164,124 @@ format_test_failure(Result = #{status := {error, Error}}) ->
     error ->
       ok
   end.
+
+-spec format_test_error(_) -> ok.
+format_test_error({error, {Type, Data}, Trace}) when
+    is_atom(Type), is_atom(Type), is_list(Data), is_list(Trace) ->
+  format_assertion_failure(Type, maps:from_list(Data)),
+  format_trace(Trace);
+format_test_error({Class, Value, Trace}) when
+    Class =:= throw; Class =:= error; Class =:= exit->
+  Behaviour = format_exception_behaviour(Class, Value),
+  io:format("  code ~ts", [Behaviour]),
+  format_trace(Trace).
+
+-spec format_assertion_failure(atom(), map()) -> ok.
+format_assertion_failure(Type, Data = #{value := Value,
+                                        expected := ExpectedValue}) when
+    Type =:= assert; Type =:= assert_failed ->
+  Expression = format_assertion_expression(Data),
+  io:format("~ts"
+            "  is ~tp~n"
+            "  but should be ~tp~n",
+            [Expression, Value, ExpectedValue]);
+format_assertion_failure(Type, Data = #{value := Value,
+                                        expected := ExpectedValue}) when
+    Type =:= assertEqual; Type =:= assertEqual_failed ->
+  Expression = format_assertion_expression(Data),
+  io:format("~ts"
+            "  is equal to~n"
+            "    ~tp~n"
+            "  but should be equal to~n"
+            "    ~tp~n",
+            [Expression, Value, ExpectedValue]);
+format_assertion_failure(Type, Data = #{value := Value,
+                                        pattern := Pattern}) when
+    Type =:= assertMatch; Type =:= assertMatch_failed ->
+  Expression = format_assertion_expression(Data),
+  io:format("~ts"
+            "  is equal to~n"
+            "    ~tp~n"
+            "  which does not match~n"
+            "    ~ts~n",
+            [Expression, Value, Pattern]);
+format_assertion_failure(Type, Data = #{value := Value,
+                                        pattern := Pattern}) when
+    Type =:= assertNotMatch; Type =:= assertNotMatch_failed ->
+  Expression = format_assertion_expression(Data),
+  io:format("~ts"
+            "  is equal to~n"
+            "    ~tp~n"
+            "  which matches~n"
+            "    ~ts~n",
+            [Expression, Value, Pattern]);
+format_assertion_failure(Type, Data = #{pattern := Pattern0}) when
+    Type =:= assertException; Type =:= assertException_failed ->
+  Expression = format_assertion_expression(Data),
+  ExpectedBehaviour =
+    format_expected_exception_behaviour(parse_exception_pattern(Pattern0)),
+  io:format("~ts"
+            "  did not raise any exception~n"
+            "  but should have ~ts",
+            [Expression, ExpectedBehaviour]);
+format_assertion_failure(Type, Data = #{unexpected_exception :=
+                                          {UEType, UEValue, _UETrace},
+                                        pattern := Pattern0}) when
+    Type =:= assertNotException; Type =:= assertNotException_failed ->
+  Expression = format_assertion_expression(Data),
+  Behaviour = format_exception_behaviour(UEType, UEValue),
+  ExpectedBehaviour =
+    format_expected_exception_behaviour(parse_exception_pattern(Pattern0)),
+  io:format("~ts"
+            "  ~ts"
+            "  but should not have ~ts",
+            [Expression, Behaviour, ExpectedBehaviour]);
+format_assertion_failure(Type, Data) ->
+  Expression = format_assertion_expression(Data),
+  io:format("~ts"
+            "  triggered assertion failure ~tp~n"
+            "    ~tp~n",
+            [Expression, Type, Data]).
+
+-spec format_assertion_expression(map()) -> io_lib:chars().
+format_assertion_expression(#{line := Line, expression := Expression}) ->
+  io_lib:format("  line ~b, expression~n    ~ts~n", [Line, Expression]).
+
+-spec format_exception_behaviour(atom(), _) -> io_lib:chars().
+format_exception_behaviour(throw, Value) ->
+  io_lib:format("threw value~n    ~tp~n", [Value]);
+format_exception_behaviour(error, Value) ->
+  io_lib:format("raised error~n    ~tp~n", [Value]);
+format_exception_behaviour(exit, Value) ->
+  io_lib:format("exited with value~n    ~tp~n", [Value]).
+
+-spec format_expected_exception_behaviour({atom(), binary()}) -> io_lib:chars().
+format_expected_exception_behaviour({throw, Pattern}) ->
+  io_lib:format("thrown a value matching~n    ~ts~n", [Pattern]);
+format_expected_exception_behaviour({error, Pattern}) ->
+  io_lib:format("raised an error matching~n    ~ts~n", [Pattern]);
+format_expected_exception_behaviour({exit, Pattern}) ->
+  io_lib:format("exited with a value matching~n    ~ts~n", [Pattern]).
+
+-spec parse_exception_pattern(string()) -> {atom(), binary()}.
+parse_exception_pattern(String) ->
+  %% See assert.hrl in the eunit application. Yes EUnit is FUBAR and I
+  %% absolutely will write a proper test application at some point.
+  RE = "^{ ([^ ]+) , (.*?) , \\[\\.\\.\\.\\] }$",
+  {match, [Class, Pattern]} =
+    re:run(String, RE, [{capture, all_but_first, binary}]),
+  {binary_to_atom(Class), Pattern}.
+
+-spec format_trace(list()) -> ok.
+format_trace(Trace) ->
+  io:format("  trace:~n"),
+  lists:foreach(fun ({M, F, A, Data}) ->
+                    File = proplists:get_value(file, Data),
+                    Line = proplists:get_value(line, Data),
+                    io:format("    ~tp:~tp/~b~n"
+                              "      ~ts:~b~n",
+                              [M, F, A, File, Line])
+                end, Trace).
 
 -spec init_test_result(list()) -> test_result().
 init_test_result(Data) ->
@@ -236,10 +354,10 @@ format_label(_Type, _Source, _Line, Description) ->
 -spec format_test_source(Source, Line) -> io_lib:chars() when
     Source :: mfa() | undefined,
     Line :: pos_integer() | undefined.
-format_test_source({M, F, _A}, undefined) ->
-  io_lib:format("~ts:~ts", [M, F]);
-format_test_source({M, F, _A}, Line) ->
-  io_lib:format("~ts:~ts:~b", [M, F, Line]).
+format_test_source({M, F, _A}, Line) when is_integer(Line), Line > 0 ->
+  io_lib:format("~ts:~ts:~b", [M, F, Line]);
+format_test_source({M, F, _A}, _) ->
+  io_lib:format("~ts:~ts", [M, F]).
 
 -spec format_time(non_neg_integer()) -> io_lib:chars().
 format_time(0) ->
