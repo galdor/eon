@@ -68,7 +68,7 @@ handle_cancel(test, Data, State) ->
   State.
 
 -spec terminate({ok, _} | {error, _}, state()) -> ok.
-terminate({ok, Data}, _State = #{cfg := #{component := Component},
+terminate({ok, Data}, _State = #{cfg := (Cfg = #{component := Component}),
                                  test_failures := TestFailures}) ->
   format_test_failures(lists:reverse(TestFailures)),
   Passed = proplists:get_value(pass, Data, 0),
@@ -76,13 +76,17 @@ terminate({ok, Data}, _State = #{cfg := #{component := Component},
   Skipped = proplists:get_value(skip, Data, 0),
   Cancelled = proplists:get_value(cancel, Data, 0),
   Total = Passed + Failed + Skipped + Cancelled,
+  case maps:get(verbose, Cfg, false) of
+    true -> io:nl();
+    false -> ok
+  end,
   case {Passed, Total} of
     {_, 0} ->
-      io:format("~n~ts: no test found~n", [Component]);
+      io:format("~ts: no test found~n", [Component]);
     {Total, Total} ->
-      io:format("~n~ts: ~b/~b tests passed~n", [Component, Passed, Total]);
+      io:format("~ts: ~b/~b tests passed~n", [Component, Passed, Total]);
     _ ->
-      io:format("~n~ts: ~b/~b tests passed"
+      io:format("~ts: ~b/~b tests passed"
                 " (~b failed, ~b skipped, ~b cancelled)~n",
                 [Component, Passed, Total, Failed, Skipped, Cancelled])
   end;
